@@ -133,9 +133,9 @@ case class XSCoreParameters
   FtqSize: Int = 64,
   EnableLoadFastWakeUp: Boolean = true, // NOTE: not supported now, make it false
   NRPhyRegs: Int = 128,
-  LoadQueueSize: Int = 80,
+  LoadQueueSize: Int = 64,
   LoadQueueNWriteBanks: Int = 8,
-  StoreQueueSize: Int = 64,
+  StoreQueueSize: Int = 48,
   StoreQueueNWriteBanks: Int = 8,
   RobSize: Int = 192,
   intRsDepth:Int = 32,
