@@ -106,7 +106,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
   val lastCycleMisprediction = RegNext(io.redirect.valid && !io.redirect.bits.flushItself())
   val robIdxHeadNext = Mux(io.redirect.valid, io.redirect.bits.robIdx, // redirect: move ptr to given rob index
          Mux(lastCycleMisprediction, robIdxHead + 1.U, // mis-predict: not flush robIdx itself
-                         Mux(canOut, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
+                         Mux(canOut & io.allowIn, robIdxHead + validCount, // instructions successfully entered next stage: increase robIdx
                       /* default */  robIdxHead))) // no instructions passed by this cycle: stick to old value
   robIdxHead := robIdxHeadNext
 
@@ -137,6 +137,7 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     uop.mergeIdx := DontCare
     uop.loadStoreEnable := DontCare
     uop.segIdx := 0.U
+    uop.elmIdx := 0.U
   })
 
   val needFpDest  = Wire(Vec(RenameWidth, Bool()))
@@ -162,8 +163,8 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     uops(i).cf.loadWaitBit := io.waittable(i)
 
     // alloc a new phy reg
-    needFpDest(i) := io.in(i).valid && needDestReg(fp = true, io.in(i).bits)
-    needIntDest(i) := io.in(i).valid && needDestReg(fp = false, io.in(i).bits)
+    needFpDest(i) := io.in(i).valid && needDestReg(fp = true, io.in(i).bits) && io.allowIn
+    needIntDest(i) := io.in(i).valid && needDestReg(fp = false, io.in(i).bits) && io.allowIn
     fpFreeList.io.allocateReq(i) := needFpDest(i)
     intFreeList.io.allocateReq(i) := needIntDest(i) && !isMove(i)
 
@@ -311,6 +312,14 @@ class Rename(implicit p: Parameters) extends XSModule with HasPerfEvents with Ha
     io.toVCtl(i).old_pdest := io.out(i).bits.old_pdest
     io.toVCtl(i).robIdx := io.out(i).bits.robIdx
   }
+
+  val setVlBypass0 = io.out(0).bits.ctrl.fuType === FuType.csr &&
+                    (io.out(0).bits.ctrl.fuOpType === CSROpType.vsetvl || io.out(0).bits.ctrl.fuOpType === CSROpType.vsetvli) &&
+                    io.out(0).bits.ctrl.lsrc(0) === 0.U && io.out(0).bits.ctrl.ldest === 0.U
+  when(setVlBypass0) {
+    io.out(0).bits.psrc(0) := vtyperename.io.out(0).bits.psrc(0)
+  }
+
 
 
   /**

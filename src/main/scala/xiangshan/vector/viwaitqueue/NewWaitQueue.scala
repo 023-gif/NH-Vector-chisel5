@@ -27,11 +27,6 @@ class NewWqEnqIO(implicit p: Parameters) extends VectorBaseBundle  {
   val needAlloc = Vec(VIDecodeWidth, Input(Bool()))
   val req = Vec(VIDecodeWidth, Flipped(ValidIO(new NewVIMop)))
 }
-class SplitCtrlIO extends Bundle {
-  val allowNext = Input(Bool())
-  val allDone = Input(Bool())
-}
-
 class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCircularQueuePtrHelper {
   val io = IO(new Bundle() {
     //val hartId = Input(UInt(8.W))
@@ -44,7 +39,6 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
     val enq = new NewWqEnqIO
     val out = Vec(VIRenameWidth, DecoupledIO(new MicroOp))
     val vmbInit = Output(Valid(new MicroOp))
-    val splitCtrl = new SplitCtrlIO
   })
   private class WqPtr extends CircularQueuePtr[WqPtr](VIWaitQueueWidth)
   private val deqPtr = RegInit(0.U.asTypeOf(new WqPtr))
@@ -62,7 +56,7 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
   private val enqMask = UIntToMask(enqPtr.value, VIWaitQueueWidth)
   private val deqMask = UIntToMask(deqPtr.value, VIWaitQueueWidth)
   private val enqXorDeq = enqMask ^ deqMask
-  private val validMask = Mux(deqPtr.value <= enqPtr.value, enqXorDeq, (~enqXorDeq).asUInt)
+  private val validMask = Mux(deqPtr.value < enqPtr.value || deqPtr === enqPtr, enqXorDeq, (~enqXorDeq).asUInt)
   private val redirectMask = validMask & table.io.flushMask
   private val flushNum = PopCount(redirectMask)
 
@@ -130,7 +124,9 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
   table.io.deq.addr := deqPtr.value
   private val deqUop = table.io.deq.data
   private val deqHasException = deqUop.uop.cf.exceptionVec(illegalInstr)
-  private val raiseII = deqUop.uop.ctrl.wvstartType === VstartType.hold && io.vstart =/= 0.U
+  private val iiCond0 = deqUop.uop.ctrl.wvstartType === VstartType.hold && io.vstart =/= 0.U
+  private val iiCond1 = deqUop.uop.vctrl.vm && deqUop.uop.ctrl.ldest === 0.U && deqUop.uop.ctrl.vdWen && !deqUop.uop.vctrl.maskOp
+  private val raiseII = iiCond0 || iiCond1
 
   private val vstartHold = RegInit(false.B)
   private val hasValid = deqPtr =/= enqPtr && !vstartHold
@@ -148,7 +144,7 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
   private val splitDriver = Module(new DequeuePipeline(1))
   splitDriver.io.redirect := io.redirect
   splitDriver.io.in(0).bits := deqUop.uop
-  splitDriver.io.in(0).valid := hasValid && uopRdy && !directlyWb
+  splitDriver.io.in(0).valid := hasValid && uopRdy && (!directlyWb || deqUop.uop.uopNum === 0.U && deqUop.uop.vctrl.isLs)
 
   splitNetwork.io.redirect := io.redirect
   splitNetwork.io.in.valid := splitDriver.io.out(0).valid
@@ -163,20 +159,8 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
 
   private val actualDeqNum = Mux(deqValid && !splitDriver.io.in(0).bits.robIdx.needFlush(io.redirect), 1.U, 0.U)
   private val actualEnqNum = Mux(doEnq && !io.redirect.valid, enqNum, 0.U)
-  private val actulaFlushNum = Mux(io.redirect.valid, flushNum, 0.U)
-  emptyEntriesNumReg := (emptyEntriesNumReg - actualEnqNum) + (actulaFlushNum +& actualDeqNum)
-
-
-  private val orderLsOnGoing = RegEnable(deqUop.uop.vctrl.isLs && deqUop.uop.vctrl.ordered, false.B, deqValid)
-  when(io.splitCtrl.allDone) {
-    orderLsOnGoing := false.B
-  }
-  private val allowNext = RegInit(true.B)
-  when(io.splitCtrl.allowNext | io.splitCtrl.allDone | deqValid){
-    allowNext := true.B
-  }.elsewhen(splitNetwork.io.out.head.fire) {
-    allowNext := false.B
-  }
+  private val actualFlushNum = Mux(io.redirect.valid, flushNum, 0.U)
+  emptyEntriesNumReg := (emptyEntriesNumReg - actualEnqNum) + (actualFlushNum +& actualDeqNum)
 
   when(deqValid && !deqHasException && io.vstart =/= 0.U){
     vstartHold := true.B
@@ -186,16 +170,7 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
 
   private val splitPipe = Module(new DequeuePipeline(VIRenameWidth))
   splitPipe.io.redirect := io.redirect
-  splitPipe.io.in.zip(splitNetwork.io.out).zipWithIndex.foreach({case((sink, source), idx) =>
-    sink.bits := source.bits
-    if(idx == 0){
-      sink.valid := Mux(orderLsOnGoing, allowNext & source.valid, source.valid)
-      source.ready := Mux(orderLsOnGoing, allowNext & sink.ready, sink.ready)
-    } else {
-      sink.valid := Mux(orderLsOnGoing, false.B, source.valid)
-      source.ready := Mux(orderLsOnGoing, false.B, sink.ready)
-    }
-  })
+  splitPipe.io.in.zip(splitNetwork.io.out).foreach({case(sink, source) => sink <> source})
 
   io.out <> splitPipe.io.out
 

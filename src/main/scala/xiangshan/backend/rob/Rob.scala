@@ -418,10 +418,14 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   val vstart = Wire(ValidIO(UInt(7.W)))
 
   fflags.valid := io.commits.isCommit && VecInit(wflags).asUInt.orR
-  fflags.bits := PriorityMux(wflags.reverse, csrDataRead.map(_.fflags).reverse)
+  fflags.bits := wflags.zip(csrDataRead).map({
+    case (w, f) => Mux(w, f.fflags, 0.U)
+  }).reduce(_ | _)
 
   vxsat.valid := io.commits.isCommit && VecInit(wvcsr).asUInt.orR
-  vxsat.bits := PriorityMux(wvcsr.reverse, csrDataRead.map(_.vxsat).reverse)
+  vxsat.bits := wvcsr.zip(csrDataRead).map({
+    case (w, c) => Mux(w, c.vxsat, 0.U)
+  }).reduce(_ | _)
   val dirty_vs = io.commits.isCommit && VecInit(vecWen).asUInt.orR
   val dirty_fs = io.commits.isCommit && VecInit(fpWen).asUInt.orR
   val blockCommit = hasWFI || exceptionWaitingRedirect
@@ -881,7 +885,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
         0.U.asTypeOf(chiselTypeOf(exc_wb.bits.trigger.backendHit)))
       exc_wb.bits.trigger.backendCanFire := Mux(wbWithException(i)._1.trigger.B, wb.bits.uop.cf.trigger.backendCanFire,
         0.U.asTypeOf(chiselTypeOf(exc_wb.bits.trigger.backendCanFire)))
-      exc_wb.bits.vstart := 1.U
+      exc_wb.bits.vstart := 0.U
       println(s"  [$i] ${wbWithException(i)._1.name}: exception ${wbWithException(i)._1.exceptionOut}")
     } else {
       exc_wb.valid := wb.valid
@@ -890,7 +894,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       exc_wb.bits.singleStep := false.B
       exc_wb.bits.crossPageIPFFix := false.B
       exc_wb.bits.trigger := wb.bits.uop.cf.trigger
-      exc_wb.bits.vstart := Mux(wb.bits.uop.uopIdx === 0.U, 1.U, wb.bits.uop.uopIdx)
+      exc_wb.bits.vstart := wb.bits.uop.uopIdx
     }
   }
 

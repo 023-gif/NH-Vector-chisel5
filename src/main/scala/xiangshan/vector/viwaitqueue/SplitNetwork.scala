@@ -20,6 +20,7 @@ class LsSplitUnit(implicit p: Parameters) extends XSModule {
       val prestart = Bool()
       val tail = Bool()
       val segIdx = UInt(log2Ceil(VLEN).W)
+      val elmIdx = UInt(3.W)
     })
   })
   private val store = io.uop.ctrl.fuType === FuType.stu
@@ -29,7 +30,7 @@ class LsSplitUnit(implicit p: Parameters) extends XSModule {
   private val memSew = vctrl.eew(0)
   private val nf = io.uop.vctrl.nf
   private val segIdx = io.out.segIdx
-  private val elmIdx = Wire(UInt(3.W))
+  private val elmIdx = io.out.elmIdx
 
   segIdx := MuxCase(idx, Seq(
     (nf === 2.U) -> idx / 2.U,
@@ -73,10 +74,10 @@ class LsSplitUnit(implicit p: Parameters) extends XSModule {
   ))
 
   io.out.vs2Addend := MuxCase(0.U, Seq(
-    (idxSew === 0.U) -> (idx >> 4.U),
-    (idxSew === 1.U) -> (idx >> 3.U),
-    (idxSew === 2.U) -> (idx >> 2.U),
-    (idxSew === 3.U) -> (idx >> 1.U),
+    (idxSew === 0.U) -> (segIdx >> 4.U),
+    (idxSew === 1.U) -> (segIdx >> 3.U),
+    (idxSew === 2.U) -> (segIdx >> 2.U),
+    (idxSew === 3.U) -> (segIdx >> 1.U),
   ))
 
   private val lFuOpType = Wire(FuOpType())
@@ -130,16 +131,18 @@ class SplitUop(splitNum:Int)(implicit p: Parameters) extends XSModule {
   io.out.zipWithIndex.foreach({ case (o, idx) =>
     val currentnum = io.current(idx)
     val lsSu = lsSplitUnit(idx)
-    o.valid := io.in.valid && (currentnum < io.in.bits.uopNum)
+    o.valid := io.in.valid &&
+      ((currentnum < io.in.bits.uopNum) || (currentnum === 0.U && io.in.bits.uopNum === 0.U && io.in.bits.vctrl.isLs))
     o.bits := io.in.bits
     o.bits.uopNum := io.in.bits.uopNum
     o.bits.uopIdx := currentnum
     o.bits.isTail := lsSu.io.out.tail//Only VLS need this
     o.bits.isPrestart := lsSu.io.out.prestart //Only VLS need this
     o.bits.segIdx := lsSu.io.out.segIdx //Only VLS need this
+    o.bits.elmIdx := lsSu.io.out.elmIdx //Only VLS need this
 
     when(io.in.bits.vctrl.isLs) {
-      o.bits.canRename := lsSu.io.out.shouldRename
+      o.bits.canRename := lsSu.io.out.shouldRename && io.in.bits.uopNum.orR
       o.bits.ctrl.ldest := ctrl.ldest + lsSu.io.out.vdAddend
       o.bits.ctrl.lsrc(0) := ctrl.lsrc(0)
       o.bits.ctrl.lsrc(1) := Mux(ctrl.srcType(1) === SrcType.vec, ctrl.lsrc(1) + lsSu.io.out.vs2Addend, ctrl.lsrc(1))

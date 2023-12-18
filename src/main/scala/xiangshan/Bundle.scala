@@ -228,6 +228,7 @@ class MicroOp(implicit p: Parameters) extends CfCtrl {
   val loadStoreEnable = Bool()
   val vtypeRegIdx = UInt(log2Ceil(VIVtypeRegsNum).W)
   val segIdx = UInt(log2Ceil(VLEN).W)
+  val elmIdx = UInt(3.W)
 
   def clearExceptions(
     exceptionBits: Seq[Int] = Seq(),
@@ -460,7 +461,7 @@ class VICsrInfo(implicit p: Parameters) extends XSBundle {
   val vlmax = UInt(8.W)
 
   def VLMAXGen():UInt = {
-    val VLMAX = Wire(UInt(7.W))
+    val VLMAX = Wire(UInt(8.W))
     VLMAX := MuxCase(0.U, Seq(
       (vlmul === 0.U) -> ((VLEN >> 3).U >> vsew),
       (vlmul === 1.U) -> ((VLEN >> 2).U >> vsew),
