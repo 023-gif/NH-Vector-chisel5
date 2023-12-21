@@ -24,7 +24,7 @@ class VmbExceptionSelectPolicy(width:Int)(implicit p: Parameters) extends Module
     val out = Output(Valid(new VmbExceptionInfo))
   })
   private def isOlder(self: VmbExceptionInfo, other:VmbExceptionInfo):Bool = {
-    (self.vmbIdx < other.vmbIdx) || (self.vmbIdx === other.vmbIdx && self.uopIdx < other.uopIdx)
+    (self.vmbIdx < other.vmbIdx) || (self.vmbIdx === other.vmbIdx && self.uopIdx <= other.uopIdx)
   }
   private val onlyOne = PopCount(io.in.map(_.valid)) === 1.U
   private val oldestOHMatrix = io.in.zipWithIndex.map({ case (self, idx) =>
@@ -36,10 +36,6 @@ class VmbExceptionSelectPolicy(width:Int)(implicit p: Parameters) extends Module
   io.out.valid := io.in.map(_.valid).reduce(_ | _)
   private val sel = Mux(onlyOne, defaultValue, oldestOH)
   io.out.bits := Mux1H(sel, io.in.map(_.bits))
-
-  when(io.out.valid) {
-    assert(PopCount(sel) === 1.U)
-  }
 }
 class VmbExceptionGen(wbNum:Int)(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle{
@@ -76,16 +72,16 @@ class VmbExceptionGen(wbNum:Int)(implicit p: Parameters) extends XSModule {
   vmbInit.valid := io.vmbInit.valid && vmbInit.bits.has_exception && !vmbInit.bits.robIdx.needFlush(io.redirect)
 
   private val state = Wire(Valid(new VmbExceptionInfo))
-  state.valid := currentValid
+  state.valid := currentValid && !io.clean
   state.bits := current
 
-  private val candidates = (wb :+ vmbInit :+ state).map(e => {
+  private val candidates = (wb :+ vmbInit).map(e => {
     val res = Wire(Valid(new VmbExceptionInfo))
     val validCond = e.valid && !e.bits.robIdx.needFlush(io.redirect)
     res.valid := RegNext(validCond, false.B)
     res.bits := RegEnable(e.bits, validCond)
     res
-  })
+  }) :+ state
   private val selectPolicy = Module(new VmbExceptionSelectPolicy(candidates.length))
   selectPolicy.io.in.zip(candidates).foreach({case(a, b) =>
     a.valid := b.valid && !b.bits.robIdx.needFlush(io.redirect)
