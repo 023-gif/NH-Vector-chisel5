@@ -203,6 +203,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           val isMaskDisabled = uopDelay.vctrl.vm && !(vmVal(uopDelay.segIdx).asBool)
           val isTailDisabled = uopDelay.isTail
           val isPrestartDisabled = uopDelay.isPrestart
+          val directlyDisabled = uopDelay.vctrl.disable
           //Base address read
           intRf.io.read(intRfReadIdx).addr := bi.issue.bits.uop.psrc(0)
           //Stride read
@@ -212,17 +213,11 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           //Move req
           io.vectorRfMoveReq(vecMoveReqPortIdx).valid := uopDelay.ctrl.fuType === FuType.ldu &&
             RegNext(!bi.hold && bi.issue.valid, false.B) && uopDelay.ctrl.isVector
-          when(isPrestartDisabled){
+          when(isPrestartDisabled || isTailDisabled || isMaskDisabled || directlyDisabled){
             io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := false.B
             io.vectorRfMoveReq(vecMoveReqPortIdx).bits.enable := false.B
-          }.elsewhen(isTailDisabled){
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := uopDelay.vCsrInfo.vta(0)
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.enable := false.B
-          }.elsewhen(isMaskDisabled){
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := uopDelay.vCsrInfo.vma(0)
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.enable := false.B
           }.otherwise{
-            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := uopDelay.vCsrInfo.vta(0)
+            io.vectorRfMoveReq(vecMoveReqPortIdx).bits.agnostic := false.B
             io.vectorRfMoveReq(vecMoveReqPortIdx).bits.enable := true.B
           }
           io.vectorRfMoveReq(vecMoveReqPortIdx).bits.srcAddr := uopDelay.psrc(2)
@@ -265,7 +260,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           }
           io.pcReadAddr(pcReadPortIdx) := bi.issue.bits.uop.cf.ftqPtr.value
           exuInBundle.uop.cf.pc := io.pcReadData(pcReadPortIdx).getPc(bi.issue.bits.uop.cf.ftqOffset)
-          exuInBundle.uop.loadStoreEnable := !(uopDelay.ctrl.isVector && (isMaskDisabled || isTailDisabled || isPrestartDisabled))
+          exuInBundle.uop.loadStoreEnable := !(uopDelay.ctrl.isVector && (isMaskDisabled || isTailDisabled || isPrestartDisabled || directlyDisabled))
 
           intRfReadIdx = intRfReadIdx + 2
           noBypassFpReadIdx = noBypassFpReadIdx + 1

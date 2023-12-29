@@ -27,6 +27,12 @@ class NewWqEnqIO(implicit p: Parameters) extends VectorBaseBundle  {
   val needAlloc = Vec(VIDecodeWidth, Input(Bool()))
   val req = Vec(VIDecodeWidth, Flipped(ValidIO(new NewVIMop)))
 }
+
+class SplitCtrlIO extends Bundle {
+  val allowNext = Input(Bool())
+  val allDone = Input(Bool())
+}
+
 class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCircularQueuePtrHelper {
   val io = IO(new Bundle() {
     //val hartId = Input(UInt(8.W))
@@ -39,6 +45,7 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
     val enq = new NewWqEnqIO
     val out = Vec(VIRenameWidth, DecoupledIO(new MicroOp))
     val vmbInit = Output(Valid(new MicroOp))
+    val splitCtrl = new SplitCtrlIO
   })
   private class WqPtr extends CircularQueuePtr[WqPtr](VIWaitQueueWidth)
   private val deqPtr = RegInit(0.U.asTypeOf(new WqPtr))
@@ -134,8 +141,10 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
   private val isVFMV_F_S = (deqUop.uop.vctrl.funct6 === "b010000".U) && (deqUop.uop.vctrl.funct3 === "b001".U) && (!deqUop.uop.vctrl.isLs) && (deqUop.uop.ctrl.lsrc(0) === 0.U) && (deqUop.uop.vctrl.vm === false.B)
   private val vMVXR_RS1_MATCH = deqUop.uop.ctrl.lsrc(0) === 0.U || deqUop.uop.ctrl.lsrc(0) === "b00001".U || deqUop.uop.ctrl.lsrc(0) === "b00011".U || deqUop.uop.ctrl.lsrc(0) === "b00111".U
   private val isVMVXR = (deqUop.uop.vctrl.funct6 === "b100111".U) && (deqUop.uop.vctrl.funct3 === "b011".U) && (!deqUop.uop.vctrl.isLs) && (deqUop.uop.vctrl.vm === false.B) && vMVXR_RS1_MATCH
+  private val isVFIRSTM = (deqUop.uop.vctrl.funct6 === "b010000".U) && (deqUop.uop.vctrl.funct3 === "b010".U) && (deqUop.uop.ctrl.lsrc(0) === "b10001".U) && (deqUop.uop.ctrl.fuType === FuType.vmask)
+  private val isVCPOPM = (deqUop.uop.vctrl.funct6 === "b010000".U) && (deqUop.uop.vctrl.funct3 === "b010".U) && (deqUop.uop.ctrl.lsrc(0) === "b10000".U) && (deqUop.uop.ctrl.fuType === FuType.vmask)
 
-  private val needIgnoreVl = isVMV_X_S || isVFMV_F_S || isVMVXR
+  private val needIgnoreVl = isVMV_X_S || isVFMV_F_S || isVMVXR || isVFIRSTM || isVCPOPM
 
   private val directlyWb = deqHasException || (deqUop.uop.uopNum === 0.U) || (io.vstart >= deqUop.uop.vCsrInfo.vl && !needIgnoreVl) || raiseII
 
@@ -158,6 +167,17 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
     deqPtr := deqPtr + 1.U
   }
 
+  private val orderLsOnGoing = RegEnable(deqUop.uop.vctrl.isLs && deqUop.uop.vctrl.ordered, deqValid)
+  when(io.splitCtrl.allDone) {
+    orderLsOnGoing := false.B
+  }
+  private val allowNext = RegInit(true.B)
+  when(io.splitCtrl.allowNext | io.splitCtrl.allDone | deqValid){
+    allowNext := true.B
+  }.elsewhen(splitNetwork.io.out.head.fire) {
+    allowNext := false.B
+  }
+
   private val actualDeqNum = Mux(deqValid && !splitDriver.io.in(0).bits.robIdx.needFlush(io.redirect), 1.U, 0.U)
   private val actualEnqNum = Mux(doEnq && !io.redirect.valid, enqNum, 0.U)
   private val actualFlushNum = Mux(io.redirect.valid, flushNum, 0.U)
@@ -171,7 +191,18 @@ class NewWaitQueue(implicit p: Parameters) extends VectorBaseModule with HasCirc
 
   private val splitPipe = Module(new DequeuePipeline(VIRenameWidth))
   splitPipe.io.redirect := io.redirect
-  splitPipe.io.in.zip(splitNetwork.io.out).foreach({case(sink, source) => sink <> source})
+  
+  splitPipe.io.in.zip(splitNetwork.io.out).zipWithIndex.foreach({case((sink, source), idx) =>
+    sink.bits := source.bits
+    if(idx == 0){
+      sink.valid := Mux(orderLsOnGoing, allowNext & source.valid, source.valid)
+      source.ready := Mux(orderLsOnGoing, allowNext & sink.ready, sink.ready)
+    } else {
+      sink.valid := Mux(orderLsOnGoing, false.B, source.valid)
+      source.ready := Mux(orderLsOnGoing, false.B, sink.ready)
+    }
+    sink.bits.vctrl.disable := (orderLsOnGoing === false.B || io.splitCtrl.allDone) && source.bits.vctrl.isLs && source.bits.vctrl.ordered
+  })
 
   io.out <> splitPipe.io.out
 

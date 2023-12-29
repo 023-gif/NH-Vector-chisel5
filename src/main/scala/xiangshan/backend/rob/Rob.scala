@@ -21,6 +21,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy.{LazyModule, LazyModuleImp}
 import difftest._
 import utils._
+import xiangshan.ExceptionNO.selectFrontend
 import xs.utils._
 import xiangshan._
 import xiangshan.frontend.FtqPtr
@@ -374,6 +375,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   io.exception.bits.uop.cf.crossPageIPFFix := RegEnable(exceptionDataRead.bits.crossPageIPFFix, exceptionHappen && !exceptionWaitingRedirect)
   io.exception.bits.isInterrupt := RegEnable(intrEnable, exceptionHappen && !exceptionWaitingRedirect)
   io.exception.bits.uop.cf.trigger := RegEnable(exceptionDataRead.bits.trigger, exceptionHappen && !exceptionWaitingRedirect)
+  io.exception.bits.uop.vctrl.isLs := exceptionDataRead.bits.isVls
 
   /**
    * ************************Commits (and walk)************************
@@ -530,7 +532,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
   }
 
   when(io.exception.valid && io.exception.bits.uop.ctrl.isVector) {
-    vstart.valid := true.B
+    vstart.valid := !selectFrontend(exceptionGen.io.state.bits.exceptionVec).reduce(_ | _)
     vstart.bits := exceptionGen.io.state.bits.vstart
   }.elsewhen(vstartSet0.asUInt.orR) {
     vstart.valid := true.B
@@ -867,7 +869,8 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
     exceptionGen.io.enq(i).bits.trigger.clear() // Don't care frontend timing and chain, backend hit and canFire
     exceptionGen.io.enq(i).bits.trigger.frontendHit := io.enq.req(i).bits.cf.trigger.frontendHit
     exceptionGen.io.enq(i).bits.trigger.frontendCanFire := io.enq.req(i).bits.cf.trigger.frontendCanFire
-    exceptionGen.io.enq(i).bits.vstart := io.enq.req(i).bits.uopIdx
+    exceptionGen.io.enq(i).bits.vstart := 0.U
+    exceptionGen.io.enq(i).bits.isVls := false.B
   }
 
   println(s"ExceptionGen:")
@@ -886,6 +889,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       exc_wb.bits.trigger.backendCanFire := Mux(wbWithException(i)._1.trigger.B, wb.bits.uop.cf.trigger.backendCanFire,
         0.U.asTypeOf(chiselTypeOf(exc_wb.bits.trigger.backendCanFire)))
       exc_wb.bits.vstart := 0.U
+      exc_wb.bits.isVls := false.B
       println(s"  [$i] ${wbWithException(i)._1.name}: exception ${wbWithException(i)._1.exceptionOut}")
     } else {
       exc_wb.valid := wb.valid
@@ -893,8 +897,11 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       exc_wb.bits.exceptionVec := wb.bits.uop.cf.exceptionVec
       exc_wb.bits.singleStep := false.B
       exc_wb.bits.crossPageIPFFix := false.B
-      exc_wb.bits.trigger := wb.bits.uop.cf.trigger
+      exc_wb.bits.trigger.clear()
+      exc_wb.bits.trigger.backendHit := wb.bits.uop.cf.trigger.backendHit
+      exc_wb.bits.trigger.backendCanFire := wb.bits.uop.cf.trigger.backendCanFire
       exc_wb.bits.vstart := wb.bits.uop.uopIdx
+      exc_wb.bits.isVls := wb.bits.uop.vctrl.isLs
     }
   }
 

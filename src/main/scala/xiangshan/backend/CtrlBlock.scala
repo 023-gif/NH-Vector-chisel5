@@ -159,6 +159,8 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
 
   private val memDqArb = Module(new MemDispatchArbiter(coreParams.rsBankNum))
   private val wbMergeBuffer = outer.wbMergeBuffer.module
+  vCtrlBlock.io.splitCtrl.allDone := RegNext(wbMergeBuffer.io.splitCtrl.allDone)
+  vCtrlBlock.io.splitCtrl.allowNext := RegNext(wbMergeBuffer.io.splitCtrl.allowNext)
 
   wbMergeBuffer.io.vmbInit := vCtrlBlock.io.vmbInit
   io.vecFaultOnlyFirst.valid := RegNext(wbMergeBuffer.io.ffOut.valid, false.B)
@@ -349,6 +351,7 @@ class CtrlBlockImp(outer: CtrlBlock)(implicit p: Parameters) extends LazyModuleI
   commitVector.isExtraWalk := rob.io.commits.isExtraWalk
 
   vCtrlBlock.io.commit := commitVector.Pipe
+  vCtrlBlock.io.exception := Pipe(rob.io.exception)
   vCtrlBlock.io.redirect := io.redirectIn
   vCtrlBlock.io.vstart := io.vstart
 

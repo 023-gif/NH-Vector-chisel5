@@ -130,7 +130,7 @@ class VRegfileTop(extraVectorRfReadPort: Int)(implicit p:Parameters) extends Laz
         rfwb.valid := validReg
         rfwb.bits := bitsReg
         rfwb.bits.wakeupMask := lmask
-        rfwb.bits.writeDataMask := lmask
+        rfwb.bits.writeDataMask := Mux(bitsReg.uop.cf.exceptionVec.reduce(_ | _), 0.U((VLEN / 8).W), lmask)
         rfwb.bits.redirectValid := false.B
         rfwb.bits.redirect := DontCare
       } else {
