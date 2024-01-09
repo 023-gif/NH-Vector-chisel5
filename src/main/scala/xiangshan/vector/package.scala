@@ -9,17 +9,18 @@ package object vector {
   object EewType {
     def dc:UInt = 0.U
     def const:UInt = 1.U
-    def sew:UInt = 2.U
-    def sewm2:UInt = 3.U
-    def sewd2:UInt = 4.U
-    def sewd4:UInt = 5.U
-    def sewd8:UInt = 6.U
+    def scalar:UInt = 2.U
+    def sew:UInt = 3.U
+    def sewm2:UInt = 4.U
+    def sewd2:UInt = 5.U
+    def sewd4:UInt = 6.U
+    def sewd8:UInt = 7.U
 
     def apply():UInt = UInt(3.W)
   }
 
   object EewVal {
-    def dc: BitPat = BitPat("b???")
+    def dc:UInt = "b111".U
     def mask:UInt = "b100".U
     def byte:UInt = "b000".U
     def hword:UInt = "b001".U
@@ -30,7 +31,7 @@ package object vector {
   }
 
   object EmulVal {
-    def dc: BitPat = BitPat("b???")
+    def dc: BitPat = BitPat("b111")
     def r1 :BitPat = BitPat("b000")
     def r2: BitPat = BitPat("b001")
     def r4: BitPat = BitPat("b010")
@@ -57,13 +58,14 @@ package object vector {
     val maskOp = Bool()
     val isWidden = Bool()
     val isNarrow = Bool()
+    val notOverlay = Bool()
     val nf = UInt(4.W)
     val vm = Bool()
     val funct6 = UInt(6.W)
     val funct3 = UInt(3.W)
 
     private def allSignals: IndexedSeq[UInt] = eew ++ eewType ++ Seq(emul, emulType, ordered, isLs,
-      ff, maskOp, isWidden, isNarrow)
+      ff, maskOp, isWidden, isNarrow, notOverlay)
     def decode(inst: UInt, table: Iterable[(BitPat, List[BitPat])]): VCtrlSignals = {
       this := DontCare
       val decoder = xiangshan.backend.decode.DecodeLogic(inst, VLDecode.decodeDefault, table, QMC = false)
