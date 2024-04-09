@@ -25,6 +25,7 @@ SIM_TOP_V = $(BUILD_DIR)/$(SIM_TOP).sv
 SCALA_FILE = $(shell find ./src/main/scala -name '*.scala')
 TEST_FILE = $(shell find ./src/test/scala -name '*.scala')
 MEM_GEN = ./scripts/vlsi_mem_gen
+ROT_VMEM_DIR = $(CURDIR)/src/main/resources/TLROT/test.vmem
 
 SIMTOP  = top.SimTop
 IMAGE  ?= temp
@@ -85,7 +86,12 @@ endif
 help:
 	mill -i XiangShan.test.runMain $(SIMTOP) --xs-help
 
-$(TOP_V): $(SCALA_FILE)
+update-vmem-path:
+	@sed -i 's|parameter RomCtrlBootRomInitFile = ".*"|parameter RomCtrlBootRomInitFile = "$(ROT_VMEM_DIR)"|' \
+	     src/main/resources/TLROT/src/lowrisc_systems_rot_top_0.1/rtl/rot_top.sv
+	@echo "Change ROT vmem init file to $(ROT_VMEM_DIR)"
+
+$(TOP_V): $(SCALA_FILE) update-vmem-path
 	mkdir -p $(@D)
 	time -o $(@D)/time.log mill -i XiangShan.runMain $(FPGATOP) -td $(@D) \
 		--config $(CONFIG) --full-stacktrace --num-cores $(NUM_CORES) \
@@ -112,6 +118,13 @@ endif
 verilog: $(TOP_V)
 
 $(SIM_TOP_V): $(SCALA_FILE) $(TEST_FILE)
+ifeq ($(ROT),1)
+	@sed -i 's/\(soc\.bootrom_disable\s*:=\s*\).*\.B/\1false.B/' src/test/scala/top/SimTop.scala
+	@echo "Run in Bootrom enable mode"
+else
+	@sed -i 's/\(soc\.bootrom_disable\s*:=\s*\).*\.B/\1true.B/' src/test/scala/top/SimTop.scala
+	@echo "Run in Bootrom disable mode"
+endif
 	mkdir -p $(@D)
 	@echo "\n[mill] Generating Verilog files..." > $(@D)/time.log
 	@date -R | tee -a $(@D)/time.log
@@ -169,10 +182,10 @@ idea:
 	mill -i mill.idea.GenIdea/idea
 
 # verilator simulation
-emu:
-	$(MAKE) -C ./difftest emu SIM_TOP=SimTop DESIGN_DIR=$(NOOP_HOME) NUM_CORES=$(NUM_CORES) WITH_DRAMSIM3=$(WITH_DRAMSIM3)
+emu: sim-verilog
+	$(MAKE) -C ./difftest emu SIM_TOP=SimTop DESIGN_DIR=$(NOOP_HOME) NUM_CORES=$(NUM_CORES) WITH_DRAMSIM3=$(WITH_DRAMSIM3) EMU_THREADS=16
 
-emu_rtl:
+emu_rtl: sim-verilog
 	$(MAKE) -C ./difftest emu SIM_TOP=SimTop DESIGN_DIR=$(NOOP_HOME) NUM_CORES=$(NUM_CORES) WITH_DRAMSIM3=$(WITH_DRAMSIM3) SIMDIR=1 EMU_TRACE=1 EMU_THREADS=16 REF=Spike
 
 RANDOM = $(shell echo $$RANDOM)
@@ -188,10 +201,10 @@ emu_rtl-run:
 	cd sim/emu/$(RUN_BIN) && (./emu $(EMU_RUN_OPTS) 2> assert.log | tee sim.log)
 
 # vcs simulation
-simv:
+simv: sim-verilog
 	$(MAKE) -C ./difftest simv SIM_TOP=SimTop DESIGN_DIR=$(NOOP_HOME) NUM_CORES=$(NUM_CORES) CONSIDER_FSDB=$(CONSIDER_FSDB) VCS=1 REF=Spike
 
-simv-run:
+simv-run: sim-verilog
 	$(shell if [ ! -e $(ABS_WORK_DIR)/sim/rtl/$(RUN_BIN) ];then mkdir -p $(ABS_WORK_DIR)/sim/rtl/$(RUN_BIN); fi)
 	touch sim/rtl/$(RUN_BIN)/sim.log
 	$(shell if [ -e $(ABS_WORK_DIR)/sim/rtl/$(RUN_BIN)/simv ];then rm -f $(ABS_WORK_DIR)/sim/rtl/$(RUN_BIN)/simv; fi)
@@ -203,5 +216,5 @@ simv-run:
 verdi:
 	cd sim/rtl/$(RUN_BIN) && verdi -sv -2001 +verilog2001ext+v +systemverilogext+v -ssf tb_top.vf -dbdir simv.daidir -f sim_flist.f
 
-.PHONY: verilog sim-verilog emu clean help init bump bsp $(REF_SO)
+.PHONY: verilog sim-verilog emu clean help init bump bsp $(REF_SO) update-vmem-path
 
