@@ -503,6 +503,9 @@ class BranchPredictionResp(implicit p: Parameters) extends XSBundle with HasBPUC
   val lastStageSpecInfo = new SpeculativeInfo
   val lastStageFtbEntry = new FTBEntry
 
+  val s1_uftbHit = Bool()
+  val s1_uftbHasIndirect = Bool()
+
   def selectedRespForFtq: BranchPredictionBundle ={
     val res =
       PriorityMux(Seq(
