@@ -323,6 +323,11 @@ class FTB(parentName:String = "Unknown")(implicit p: Parameters) extends BasePre
   val s3_fauftbHitFtbMiss = RegEnable(!s2_ftbHitDup(dupForFtb) && s2_uftbHitDup(dupForFtb), io.s2_fire(dupForFtb))
   io.out.lastStageFtbEntry := Mux(s3_fauftbHitFtbMiss, io.in.bits.resp_in(0).lastStageFtbEntry, s3_ftbEntryDup(dupForFtb))
   io.out.lastStageMeta := RegEnable(RegEnable(FTBMeta(writeWay.asUInt, s1_ftbHit, s1_uftbHitDup(dupForFtb), GTimer()).asUInt, io.s1_fire(dupForFtb)), io.s2_fire(dupForFtb))
+  
+  io.out.s1_uftbHit := io.fauftb_entry_hit_in
+  val s1_uftbHasIndirect = io.fauftb_entry_in.jmpValid &&
+    io.fauftb_entry_in.isJalr && !io.fauftb_entry_in.isRet // uFTB determines that it's real JALR, RET and JAL are excluded
+  io.out.s1_uftbHasIndirect := s1_uftbHasIndirect
 
   // always taken logic
   for (out_fp & in_fp & s2_hit & s2_ftb_entry <-

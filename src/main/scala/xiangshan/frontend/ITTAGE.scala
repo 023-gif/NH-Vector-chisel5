@@ -249,8 +249,12 @@ class ITTageTable
   }
 
   val bank_conflict = (0 until nBanks).map(b => table_banks(b).io.w.req.valid && s0_bank_req_1h(b)).reduce(_||_)
-  io.req.ready := !io.update.valid
-  // io.req.ready := !bank_conflict
+  //io.req.ready := !io.update.valid
+  val powerOnResetState = RegInit(true.B)
+  when(table_banks.map(_.io.r.req.ready).reduce(_ && _)) {
+    powerOnResetState := false.B
+  }
+  io.req.ready := !powerOnResetState
   XSPerfAccumulate(f"ittage_table_bank_conflict", bank_conflict)
 
   us.io.wen := io.update.uValid
@@ -317,13 +321,22 @@ abstract class BaseITTage(implicit p: Parameters) extends BasePredictor with ITT
 class ITTage(parentName:String = "Unknown")(implicit p: Parameters) extends BaseITTage {
   override val meta_size = 0.U.asTypeOf(new ITTageMeta).getWidth
 
+  // uftb miss or hasIndirect
+  val s1_uftbHit = io.in.bits.resp_in(0).s1_uftbHit
+  val s1_uftbHasIndirect = io.in.bits.resp_in(0).s1_uftbHasIndirect
+  val s1_isIndirect = s1_uftbHasIndirect
+
   val tables = ITTageTableInfos.zipWithIndex.map {
     case ((nRows, histLen, tagLen), i) =>
       // val t = if(EnableBPD) Module(new TageTable(nRows, histLen, tagLen, UBitPeriod)) else Module(new FakeTageTable)
       val t = Module(new ITTageTable(nRows, histLen, tagLen, UBitPeriod, i, parentName = parentName + s"tables${i}_"))
-      t.io.req.valid := io.s0_fire(dupForIttage)
-      t.io.req.bits.pc := s0_pc_dup(dupForIttage)
-      t.io.req.bits.foldedHist := io.in.bits.foldedHist(dupForIttage)
+      // t.io.req.valid := io.s0_fire(dupForIttage)
+      // t.io.req.bits.pc := s0_pc_dup(dupForIttage)
+      // t.io.req.bits.foldedHist := io.in.bits.foldedHist(dupForIttage)
+      t.io.req.valid := io.s1_fire(dupForIttage) && s1_isIndirect
+      t.io.req.bits.pc := s1_pc_dup(dupForIttage)
+      t.io.req.bits.foldedHist := io.in.bits.s1_folded_hist(dupForIttage)
+
       t
   }
   override def getFoldedHistoryInfo = Some(tables.map(_.getFoldedHistoryInfo).reduce(_++_))
@@ -441,7 +454,7 @@ class ITTage(parentName:String = "Unknown")(implicit p: Parameters) extends Base
     // #2276
     (provided && !(providerNull && altProvided), providerInfo.target), 
     (altProvided && providerNull, altProviderInfo.target),
-    (!provided|| providerNull && !altProvided, baseTarget)
+    (!provided, baseTarget)
   ))
   //s2_finalAltPred := Mux(altProvided, altProviderInfo.ctr(ITTageCtrBits-1), basePred)
   s2_provided       := provided

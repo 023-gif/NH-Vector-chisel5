@@ -569,7 +569,7 @@ class Tage(val parentName:String = "Unknown")(implicit p: Parameters) extends Ba
   // Update logic
   val u_valid = io.update(dupForTageSC).valid
   val update = io.update(dupForTageSC).bits
-  val updateValids = update.ftbEntry.brValid && u_valid && !update.ftbEntry.alwaysTaken
+  val updateValids = update.ftbEntry.brValid && u_valid //&& !update.ftbEntry.alwaysTaken
 //  val updateFHist = update.specInfo.foldedHist
 
   val updateMeta = update.meta.asTypeOf(new TageMeta)
