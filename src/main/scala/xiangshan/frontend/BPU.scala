@@ -137,6 +137,7 @@ class BasePredictorIO (implicit p: Parameters) extends XSBundle with HasBPUConst
 
   val update = Vec(numDup, Flipped(Valid(new BranchPredictionUpdate)))
   val redirect = Flipped(Valid(new BranchPredictionRedirect))
+  val redirectFromIFU = Input(Bool())
 }
 
 abstract class BasePredictor(implicit p: Parameters) extends XSModule
@@ -293,6 +294,7 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
   predictors.io.in.bits.resp_in(0) := (0.U).asTypeOf(new BranchPredictionResp)
   predictors.io.fauftb_entry_in := (0.U).asTypeOf(new FTBEntry)
   predictors.io.fauftb_entry_hit_in := false.B
+  predictors.io.redirectFromIFU := RegNext(io.ftq_to_bpu.redirctFromIFU, init=false.B)
   // predictors.io.in.bits.resp_in(0).s1.pc := s0_pc
   // predictors.io.in.bits.toFtq_fire := toFtq_fire
 
@@ -568,12 +570,13 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
   val s3_redirect_on_target_dup = resp.s3.target.zip(previous_s2_pred.target).map {case (t1, t2) => t1 =/= t2}
   val s3_redirect_on_jalr_target_dup = resp.s3.fullPred.zip(previous_s2_pred.fullPred).map {case (fp1, fp2) => fp1.hitTakenOnJalr && fp1.jalrTarget =/= fp2.jalrTarget}
   val s3_redirect_on_fall_thru_error_dup = resp.s3.fallThruError
+  val s3_redirect_on_ftb_multi_hit_dup = resp.s3.ftbMultiHit
 
-  for (s3_redirect & s3_fire & s3_redirect_on_br_taken & s3_redirect_on_target & s3_redirect_on_fall_thru_error <-
-    s3_redirect_dup zip s3_fire_dup zip s3_redirect_on_br_taken_dup zip s3_redirect_on_target_dup zip s3_redirect_on_fall_thru_error_dup) {
+  for (s3_redirect & s3_fire & s3_redirect_on_br_taken & s3_redirect_on_target & s3_redirect_on_fall_thru_error & s3_redirect_on_ftb_multi_hit <-
+    s3_redirect_dup zip s3_fire_dup zip s3_redirect_on_br_taken_dup zip s3_redirect_on_target_dup zip s3_redirect_on_fall_thru_error_dup zip s3_redirect_on_ftb_multi_hit_dup) {
 
     s3_redirect := s3_fire && (
-      s3_redirect_on_br_taken || s3_redirect_on_target || s3_redirect_on_fall_thru_error
+      s3_redirect_on_br_taken || s3_redirect_on_target || s3_redirect_on_fall_thru_error || s3_redirect_on_ftb_multi_hit
     )
   }
 

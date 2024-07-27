@@ -41,7 +41,7 @@ class FetchRequestBundle(implicit p: Parameters) extends XSBundle with HasICache
     this.startAddr := b.startAddr
     this.nextlineStart := b.nextLineAddr
     when (b.fallThruError) {
-      val nextBlockHigherTemp = Mux(startAddr(log2Ceil(PredictWidth)+instOffsetBits), b.startAddr, b.nextLineAddr)
+      val nextBlockHigherTemp = Mux(startAddr(log2Ceil(PredictWidth)+instOffsetBits), b.nextLineAddr, b.startAddr)
       val nextBlockHigher = nextBlockHigherTemp(VAddrBits-1, log2Ceil(PredictWidth)+instOffsetBits+1)
       this.nextStartAddr :=
         Cat(nextBlockHigher,
@@ -390,6 +390,7 @@ class FullBranchPrediction(implicit p: Parameters) extends XSBundle with HasBPUC
   val offsets = UInt(log2Ceil(PredictWidth).W)
   val fallThroughAddr = UInt(VAddrBits.W)
   val fallThroughErr = Bool()
+  val multiHit = Bool()
 
   val isJal = Bool()
   val isJalr = Bool()
@@ -424,6 +425,7 @@ class FullBranchPrediction(implicit p: Parameters) extends XSBundle with HasBPUC
   }
 
   def fallThruError: Bool = hit && fallThroughErr
+  def ftbMultiHit: Bool = hit && multiHit
 
   def hitTakenOnJmp = realSlotTaken && !isBrSharing
   def hitTakenOnCall = hitTakenOnJmp && isCall
@@ -455,7 +457,8 @@ class FullBranchPrediction(implicit p: Parameters) extends XSBundle with HasBPUC
     
     val startLower        = Cat(0.U(1.W),    pc(instOffsetBits+log2Ceil(PredictWidth)-1, instOffsetBits))
     val endLowerwithCarry = Cat(entry.carry, entry.pftAddr)
-    fallThroughErr := startLower >= endLowerwithCarry
+    // fallThroughErr := startLower >= endLowerwithCarry
+    fallThroughErr := startLower >= endLowerwithCarry || endLowerwithCarry > (startLower + (PredictWidth).U)
     fallThroughAddr := Mux(fallThroughErr, pc + (FetchWidth * 4).U, entry.getFallThrough(pc))
   }
 
@@ -487,6 +490,7 @@ class BranchPredictionBundle(implicit p: Parameters) extends XSBundle
   def brTaken        = VecInit(fullPred.map(_.brTaken))
   def shouldShiftVec = VecInit(fullPred.map(_.shouldShiftVec))
   def fallThruError  = VecInit(fullPred.map(_.fallThruError))
+  def ftbMultiHit    = VecInit(fullPred.map(_.ftbMultiHit))
 
   def taken = VecInit(cfiIndex.map(_.valid))
 

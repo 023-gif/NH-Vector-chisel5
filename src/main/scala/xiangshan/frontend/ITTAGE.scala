@@ -170,13 +170,13 @@ class ITTageTable
   def inc_ctr(ctr: UInt, taken: Bool): UInt = satUpdate(ctr, ITTageCtrBits, taken)
 
   class ITTageEntry() extends ITTageBundle {
-    // val valid = Bool()
+    val valid = Bool()
     val tag = UInt(tagLen.W)
     val ctr = UInt(ITTageCtrBits.W)
     val targetLowerBits = UInt(24.W)
   }
 
-  val validArray = RegInit(0.U(nRows.W))
+  // val validArray = RegInit(0.U(nRows.W))
 
   // Why need add instOffsetBits?
   val ittageEntrySz = 1 + tagLen + ITTageCtrBits + VAddrBits
@@ -217,7 +217,7 @@ class ITTageTable
   val table_banks_r = table_banks.map(_.io.r.resp.data(0))
 
   val resp_selected = Mux1H(s1_bank_req_1h, table_banks_r)
-  val s1_req_rhit = validArray(s1_idx) && resp_selected.tag === s1_tag
+  val s1_req_rhit = resp_selected.valid && resp_selected.tag === s1_tag
 
   io.resp.valid := (if (tagLen != 0) s1_req_rhit else true.B) // && s1_mask(b)
   io.resp.bits.ctr := resp_selected.ctr
@@ -269,17 +269,13 @@ class ITTageTable
   wrbypass.io.write_data.foreach(_ := update_wdata.ctr)
 
   val old_ctr = Mux(wrbypass.io.hit, wrbypass.io.hit_data(0).bits, io.update.oldCtr)
+  update_wdata.valid := true.B
   update_wdata.ctr   := Mux(io.update.alloc, 2.U, inc_ctr(old_ctr, io.update.correct))
   update_wdata.tag   := update_tag
   // only when ctr is null
   val updtTarget = Mux(io.update.alloc || ctr_null(old_ctr), update_target, io.update.old_target)
   update_wdata.targetLowerBits    := updtTarget(23,0)
   
-  val newValidArray = VecInit(validArray.asBools)
-  when (io.update.valid) {
-    newValidArray(update_idx) := true.B
-    validArray := newValidArray.asUInt
-  }
 
   // reset all us in 32 cycles
   us.io.resetEn.foreach(_ := io.update.reset_u)
@@ -487,7 +483,7 @@ class ITTage(parentName:String = "Unknown")(implicit p: Parameters) extends Base
   // and also uses a longer history than the provider
   val s2_allocatableSlots = VecInit(s2_resps.map(r => !r.valid && !r.bits.u)).asUInt &
     ~(LowerMask(UIntToOH(s2_provider), ITTageNTables) & Fill(ITTageNTables, s2_provided.asUInt))
-  val s2_allocLFSR   = LFSR64()(ITTageNTables - 1, 0)
+  val s2_allocLFSR   = random.LFSR(width=15)(ITTageNTables - 1, 0)
   val s2_firstEntry  = PriorityEncoder(s2_allocatableSlots)
   val s2_maskedEntry = PriorityEncoder(s2_allocatableSlots & s2_allocLFSR)
   val s2_allocEntry  = Mux(s2_allocatableSlots(s2_maskedEntry), s2_maskedEntry, s2_firstEntry)

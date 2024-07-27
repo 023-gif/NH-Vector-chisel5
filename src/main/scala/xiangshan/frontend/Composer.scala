@@ -59,6 +59,7 @@ class Composer(parentName:String = "Unknown")(implicit p: Parameters) extends Ba
 
     c.io.redirect := io.redirect
     c.io.ctrl := DelayN(io.ctrl, 1)
+    c.io.redirectFromIFU := io.redirectFromIFU
 
     if (c.meta_size > 0) {
       metas = (metas << c.meta_size) | c.io.out.lastStageMeta(c.meta_size-1,0)

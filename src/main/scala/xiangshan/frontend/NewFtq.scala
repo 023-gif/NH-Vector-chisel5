@@ -140,6 +140,7 @@ class FtqToBpuIO(implicit p: Parameters) extends XSBundle {
   val redirect = Valid(new BranchPredictionRedirect)
   val update = Valid(new BranchPredictionUpdate)
   val enq_ptr = Output(new FtqPtr)
+  val redirctFromIFU = Output(Bool())
 }
 
 class FtqToPrefetchIO(implicit p: Parameters) extends XSBundle with HasCircularQueuePtrHelper {
@@ -1027,7 +1028,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
    * Redirect to BPU.
    * Commit update to BPU.
    */
-
+  io.toBpu.redirctFromIFU := ifuRedirectToBpu.valid
   io.toBpu.redirect := Mux(fromBackendRedirect.valid, fromBackendRedirect, ifuRedirectToBpu)
 
   val mayHaveStallFromBpu = Wire(Bool())
