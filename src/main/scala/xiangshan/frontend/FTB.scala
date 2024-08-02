@@ -384,7 +384,7 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   val s2_multi_hit = ftbBank.io.read_multi_hits.valid && io.s2_fire(0)
   val s2_multi_hit_way = ftbBank.io.read_multi_hits.bits
   val s2_multi_hit_entry = ftbBank.io.read_multi_entry
-  val s2_multi_hit_enable = s2_multi_hit && io.s2_redirect(0)
+  val s2_multi_hit_enable = s2_multi_hit //&& io.s2_redirect(0)
   XSPerfAccumulate("ftb_s2_multi_hit",s2_multi_hit)
   XSPerfAccumulate("ftb_s2_multi_hit_enable",s2_multi_hit_enable)
 
@@ -508,10 +508,10 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   //   FTBMeta(writeWay.asUInt, s1_ftbHit, s1_uftbHitDup(dupForFtb), GTimer()).asUInt,
   //   io.s1_fire(dupForFtb)), io.s2_fire(dupForFtb))
 
-  io.out.s1_uftbHit := io.fauftb_entry_hit_in
-  val s1_uftbHasIndirect = io.fauftb_entry_in.jmpValid &&
-    io.fauftb_entry_in.isJalr && !io.fauftb_entry_in.isRet // uFTB determines that it's real JALR, RET and JAL are excluded
-  io.out.s1_uftbHasIndirect := s1_uftbHasIndirect
+  // io.out.s1_uftbHit := io.fauftb_entry_hit_in
+  // val s1_uftbHasIndirect = io.fauftb_entry_in.jmpValid &&
+  //   io.fauftb_entry_in.isJalr && !io.fauftb_entry_in.isRet // uFTB determines that it's real JALR, RET and JAL are excluded
+  // io.out.s1_uftbHasIndirect := s1_uftbHasIndirect
 
   // always taken logic
   for (out_fp & in_fp & s2_hit & s2_ftb_entry <-

@@ -175,8 +175,8 @@ class TageBTable(parentName:String = "Unknown")(implicit p: Parameters) extends 
       way = numBr,
       shouldReset = false,
       holdRead = true,
-      bypassWrite = true,
-      singlePort=true
+      bypassWrite = true
+      //singlePort=true
     ))
   val mbistPipeline = if(coreParams.hasMbist && coreParams.hasShareBus) {
     MBISTPipeline.PlaceMbistPipeline(1, s"${parentName}_mbistPipe", true)

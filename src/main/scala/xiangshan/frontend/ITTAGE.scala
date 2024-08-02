@@ -318,17 +318,20 @@ abstract class BaseITTage(implicit p: Parameters) extends BasePredictor with ITT
 class ITTage(parentName:String = "Unknown")(implicit p: Parameters) extends BaseITTage {
   override val meta_size = 0.U.asTypeOf(new ITTageMeta).getWidth
 
-  val s1_uftbHit = io.in.bits.resp_in(0).s1_uftbHit
-  val s1_uftbHasIndirect = io.in.bits.resp_in(0).s1_uftbHasIndirect
-  val s1_isIndirect = s1_uftbHasIndirect
+  // val s1_uftbHit = io.in.bits.resp_in(0).s1_uftbHit
+  // val s1_uftbHasIndirect = io.in.bits.resp_in(0).s1_uftbHasIndirect
+  // val s1_isIndirect = s1_uftbHasIndirect
 
   val tables = ITTageTableInfos.zipWithIndex.map {
     case ((nRows, histLen, tagLen), i) =>
       // val t = if(EnableBPD) Module(new TageTable(nRows, histLen, tagLen, UBitPeriod)) else Module(new FakeTageTable)
       val t = Module(new ITTageTable(nRows, histLen, tagLen, UBitPeriod, i, parentName = parentName + s"tables${i}_"))
-      t.io.req.valid := io.s1_fire(dupForIttage) && s1_isIndirect
-      t.io.req.bits.pc := s1_pc_dup(dupForIttage)
-      t.io.req.bits.foldedHist := io.in.bits.s1_folded_hist(dupForIttage)      
+      t.io.req.valid := io.s0_fire(dupForIttage)
+      t.io.req.bits.pc := s0_pc_dup(dupForIttage)
+      t.io.req.bits.foldedHist := io.in.bits.foldedHist(dupForIttage)
+      // t.io.req.valid := io.s1_fire(dupForIttage) && s1_isIndirect
+      // t.io.req.bits.pc := s1_pc_dup(dupForIttage)
+      // t.io.req.bits.foldedHist := io.in.bits.s1_folded_hist(dupForIttage)      
       t
   }
   override def getFoldedHistoryInfo = Some(tables.map(_.getFoldedHistoryInfo).reduce(_++_))
