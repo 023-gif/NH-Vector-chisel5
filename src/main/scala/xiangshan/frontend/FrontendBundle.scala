@@ -508,7 +508,8 @@ class BranchPredictionResp(implicit p: Parameters) extends XSBundle with HasBPUC
   val lastStageFtbEntry = new FTBEntry
 
   val s1_uftbHit = Bool()
-  // val s1_uftbHasIndirect = Bool()
+  val s1_uftbHasIndirect = Bool()
+  val s1_ftbCloseReq = Bool()
 
   def selectedRespForFtq: BranchPredictionBundle ={
     val res =

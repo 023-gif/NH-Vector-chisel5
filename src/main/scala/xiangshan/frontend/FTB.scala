@@ -43,8 +43,8 @@ trait FTBParams extends HasXSParameter with HasBPUConst {
   def BR_OFFSET_LEN = 12
   def JMP_OFFSET_LEN = 20
 
-  // def FTBCLOSE_THRESHOLD_SZ = log2Ceil(500)
-  // def FTBCLOSE_THRESHOLD = 500.U(FTBCLOSE_THRESHOLD_SZ.W) //can be modified
+  def FTBCLOSE_THRESHOLD_SZ = log2Ceil(500)
+  def FTBCLOSE_THRESHOLD = 500.U(FTBCLOSE_THRESHOLD_SZ.W) //can be modified
 }
 //cut ftb_entry_mem area
 class FTBEntry_FtqMem(implicit p: Parameters) extends XSBundle with FTBParams with BPUUtils {
@@ -199,16 +199,6 @@ object FTBMeta {
     e
   }
 }
-  // object FTBMeta {
-  //   def apply(writeWay: UInt, hit: Bool, fauhit: Bool, predCycle: UInt)(implicit p: Parameters): FTBMeta = {
-  //     val e = Wire(new FTBMeta)
-  //     e.writeWay := writeWay
-  //     e.hit := hit
-  //     // e.fauFtbHit.foreach(_ := fauhit)
-  //     e.predCycle.foreach(_ := predCycle)
-  //     e
-  //   }
-  // }
 
 class FTB(parentName:String = "Unknown")(implicit p: Parameters)
 extends BasePredictor with FTBParams with BPUUtils
@@ -375,9 +365,9 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   } // FTBBank
 
   //FTB switch register & temporary storage of fauftb prediction results
-  // val s0_close_ftb_req = RegInit(false.B)
-  // val s1_close_ftb_req = RegEnable(s0_close_ftb_req, false.B, io.s0_fire(0))
-  // val s2_close_ftb_req = RegEnable(s1_close_ftb_req, false.B, io.s1_fire(0))
+  val s0_close_ftb_req = RegInit(false.B)
+  val s1_close_ftb_req = RegEnable(s0_close_ftb_req, false.B, io.s0_fire(0))
+  val s2_close_ftb_req = RegEnable(s1_close_ftb_req, false.B, io.s1_fire(0))
   val s2_fauftb_ftb_entry_dup = io.s1_fire.map(f => RegEnable(io.fauftb_entry_in, f))
   val s2_fauftb_ftb_entry_hit_dup = io.s1_fire.map(f => RegEnable(io.fauftb_entry_hit_in, f))
 
@@ -388,7 +378,7 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
     None
   }
 
-  ftbBank.io.reqPC.valid := io.s0_fire(dupForFtb) //&& !s0_close_ftb_req
+  ftbBank.io.reqPC.valid := io.s0_fire(dupForFtb) && !s0_close_ftb_req
   ftbBank.io.reqPC.bits := s0_pc_dup(dupForFtb)
 
   val s2_multi_hit = ftbBank.io.read_multi_hits.valid && io.s2_fire(0)
@@ -399,66 +389,64 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   XSPerfAccumulate("ftb_s2_multi_hit_enable",s2_multi_hit_enable)
 
   val btb_enable_dup = RegNext(dup(io.ctrl.btb_enable))
-  val s2_ftbEntryDup = io.s1_fire.map(f => RegEnable(ftbBank.io.readResp, f))
+  // val s2_ftbEntryDup = io.s1_fire.map(f => RegEnable(ftbBank.io.readResp, f))
   // val s3_ftbEntryDup = io.s2_fire.zip(s2_ftbEntryDup).map {case (f, e) => RegEnable(e, f)}
-  // val s1_read_resp = Mux(s1_close_ftb_req,io.fauftb_entry_in,ftbBank.io.readResp)
-  // val s2_ftbBank_dup = io.s1_fire.map(f => RegEnable(ftbBank.io.readResp, f))
-  // val s2_ftbEntryDup = dup(0.U.asTypeOf(new FTBEntry))
-  // for(((s2_fauftb_entry,s2_ftbBank_entry),s2_ftb_entry) <-
-  //   s2_fauftb_ftb_entry_dup zip s2_ftbBank_dup zip s2_ftbEntryDup){
-  //     s2_ftb_entry := Mux(s2_close_ftb_req,s2_fauftb_entry,s2_ftbBank_entry)
-  // }
+  val s1_read_resp = Mux(s1_close_ftb_req,io.fauftb_entry_in,ftbBank.io.readResp)
+  val s2_ftbBank_dup = io.s1_fire.map(f => RegEnable(ftbBank.io.readResp, f))
+  val s2_ftbEntryDup = dup(0.U.asTypeOf(new FTBEntry))
+  for(((s2_fauftb_entry,s2_ftbBank_entry),s2_ftb_entry) <-
+    s2_fauftb_ftb_entry_dup zip s2_ftbBank_dup zip s2_ftbEntryDup){
+      s2_ftb_entry := Mux(s2_close_ftb_req,s2_fauftb_entry,s2_ftbBank_entry)
+  }
   val s3_ftbEntryDup = io.s2_fire.zip(s2_ftbEntryDup).map {case (f, e) => RegEnable(Mux(s2_multi_hit_enable, s2_multi_hit_entry, e), f)}
 
   //After closing ftb, the hit output from s2 is the hit of FauFTB cached in s1.
   //s1_hit is the ftbBank hit.
-  // val s1_hit = Mux(s1_close_ftb_req,false.B,ftbBank.io.readHits.valid && io.ctrl.btb_enable)
-  val s1_hit = ftbBank.io.readHits.valid && io.ctrl.btb_enable
+  val s1_hit = Mux(s1_close_ftb_req,false.B,ftbBank.io.readHits.valid && io.ctrl.btb_enable)
   val s2_ftb_hit_dup = io.s1_fire.map(f => RegEnable(s1_hit, 0.B, f))
-  // val s2_hit_dup = dup(0.U.asTypeOf(Bool()))
-  // for(((s2_fauftb_hit,s2_ftb_hit),s2_hit) <-
-  //   s2_fauftb_ftb_entry_hit_dup zip s2_ftb_hit_dup zip s2_hit_dup){
-  //     s2_hit := Mux(s2_close_ftb_req,s2_fauftb_hit,s2_ftb_hit)
-  // }
-  val s3_hit_dup = io.s2_fire.zip(s2_ftb_hit_dup).map {case (f, h) => RegEnable(Mux(s2_multi_hit_enable, s2_multi_hit, h), 0.B, f)}
+  val s2_hit_dup = dup(0.U.asTypeOf(Bool()))
+  for(((s2_fauftb_hit,s2_ftb_hit),s2_hit) <-
+    s2_fauftb_ftb_entry_hit_dup zip s2_ftb_hit_dup zip s2_hit_dup){
+      s2_hit := Mux(s2_close_ftb_req,s2_fauftb_hit,s2_ftb_hit)
+  }
+  val s3_hit_dup = io.s2_fire.zip(s2_hit_dup).map {case (f, h) => RegEnable(Mux(s2_multi_hit_enable, s2_multi_hit, h), 0.B, f)}
   val s3_mult_hit_dup = io.s2_fire.map(f => RegEnable(s2_multi_hit_enable,f))
-  // val writeWay = Mux(s1_close_ftb_req,0.U,ftbBank.io.readHits.bits)
-  val writeWay = ftbBank.io.readHits.bits
+  val writeWay = Mux(s1_close_ftb_req,0.U,ftbBank.io.readHits.bits)
   val s2_ftb_meta = RegEnable(FTBMeta(writeWay.asUInt, s1_hit, GTimer()).asUInt, io.s1_fire(0))
   val s2_multi_hit_meta = FTBMeta(s2_multi_hit_way.asUInt, s2_multi_hit, GTimer()).asUInt
 
   //Consistent count of entries for fauftb and ftb
-  // val fauftb_ftb_entry_consistent_counter = RegInit(0.U(FTBCLOSE_THRESHOLD_SZ.W))
-  // val fauftb_ftb_entry_consistent = s2_fauftb_ftb_entry_dup(0).entryConsistent(s2_ftbBank_dup(0))
+  val fauftb_ftb_entry_consistent_counter = RegInit(0.U(FTBCLOSE_THRESHOLD_SZ.W))
+  val fauftb_ftb_entry_consistent = s2_fauftb_ftb_entry_dup(0).entryConsistent(s2_ftbBank_dup(0))
 
   //if close ftb_req, the counter need keep
-  // when(io.s2_fire(0) && s2_fauftb_ftb_entry_hit_dup(0) && s2_ftb_hit_dup(0) ){
-  //   fauftb_ftb_entry_consistent_counter := Mux(fauftb_ftb_entry_consistent, fauftb_ftb_entry_consistent_counter + 1.U, 0.U)
-  // } .elsewhen(io.s2_fire(0) && !s2_fauftb_ftb_entry_hit_dup(0) && s2_ftb_hit_dup(0) ){
-  //   fauftb_ftb_entry_consistent_counter := 0.U
-  // }
+  when(io.s2_fire(0) && s2_fauftb_ftb_entry_hit_dup(0) && s2_ftb_hit_dup(0) ){
+    fauftb_ftb_entry_consistent_counter := Mux(fauftb_ftb_entry_consistent, fauftb_ftb_entry_consistent_counter + 1.U, 0.U)
+  } .elsewhen(io.s2_fire(0) && !s2_fauftb_ftb_entry_hit_dup(0) && s2_ftb_hit_dup(0) ){
+    fauftb_ftb_entry_consistent_counter := 0.U
+  }
 
-  // when((fauftb_ftb_entry_consistent_counter >= FTBCLOSE_THRESHOLD) && io.s0_fire(0)){
-  //   s0_close_ftb_req := true.B
-  // }
+  when((fauftb_ftb_entry_consistent_counter >= FTBCLOSE_THRESHOLD) && io.s0_fire(0)){
+    s0_close_ftb_req := true.B
+  }
 
   //Clear counter during false_hit or ifuRedirect
-  // val ftb_false_hit = WireInit(false.B)
-  // val needReopen = s0_close_ftb_req && (ftb_false_hit || io.redirectFromIFU)
-  // ftb_false_hit := io.update(dupForFtb).valid && io.update(dupForFtb).bits.falseHit
-  // when(needReopen){
-  //   fauftb_ftb_entry_consistent_counter := 0.U
-  //   s0_close_ftb_req := false.B
-  // }
+  val ftb_false_hit = WireInit(false.B)
+  val needReopen = s0_close_ftb_req && (ftb_false_hit || io.redirectFromIFU)
+  ftb_false_hit := io.update(dupForFtb).valid && io.update(dupForFtb).bits.falseHit
+  when(needReopen){
+    fauftb_ftb_entry_consistent_counter := 0.U
+    s0_close_ftb_req := false.B
+  }
 
-  // val s2_close_consistent = s2_fauftb_ftb_entry_dup(0).entryConsistent(s2_ftbEntryDup(0))
-  // val s2_not_close_consistent = s2_ftbBank_dup(0).entryConsistent(s2_ftbEntryDup(0))
+  val s2_close_consistent = s2_fauftb_ftb_entry_dup(0).entryConsistent(s2_ftbEntryDup(0))
+  val s2_not_close_consistent = s2_ftbBank_dup(0).entryConsistent(s2_ftbEntryDup(0))
 
-  // when(s2_close_ftb_req && io.s2_fire(0)){
-  //   assert(s2_close_consistent, s"Entry inconsistency after ftb req is closed!")
-  // }.elsewhen(!s2_close_ftb_req &&  io.s2_fire(0)){
-  //   assert(s2_not_close_consistent, s"Entry inconsistency after ftb req is not closed!")
-  // }
+  when(s2_close_ftb_req && io.s2_fire(0)){
+    assert(s2_close_consistent, s"Entry inconsistency after ftb req is closed!")
+  }.elsewhen(!s2_close_ftb_req &&  io.s2_fire(0)){
+    assert(s2_not_close_consistent, s"Entry inconsistency after ftb req is not closed!")
+  }
   
   val s1_ftbHit = ftbBank.io.readHits.valid && io.ctrl.btb_enable
   val s1_uftbHitDup = io.in.bits.resp_in(0).s1.fullPred.map(_.hit)
@@ -473,13 +461,13 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   val s3_hitDup = io.s2_fire.zip(s2_realHitDup).map {case (f, h) => RegEnable(h, f)}
   // val writeWay = ftbBank.io.readHits.bits
 
-  // val  reopenCounter = !s1_close_ftb_req && s2_close_ftb_req &&  io.s2_fire(0)
-  // val  falseHitReopenCounter = ftb_false_hit && s1_close_ftb_req
-  // XSPerfAccumulate("ftb_req_reopen_counter",reopenCounter)
-  // XSPerfAccumulate("false_hit_reopen_Counter",falseHitReopenCounter)
-  // XSPerfAccumulate("ifuRedirec_needReopen",s1_close_ftb_req && io.redirectFromIFU)
-  // XSPerfAccumulate("this_cycle_is_close",s2_close_ftb_req && io.s2_fire(0))
-  // XSPerfAccumulate("this_cycle_is_open",!s2_close_ftb_req && io.s2_fire(0))
+  val  reopenCounter = !s1_close_ftb_req && s2_close_ftb_req &&  io.s2_fire(0)
+  val  falseHitReopenCounter = ftb_false_hit && s1_close_ftb_req
+  XSPerfAccumulate("ftb_req_reopen_counter",reopenCounter)
+  XSPerfAccumulate("false_hit_reopen_Counter",falseHitReopenCounter)
+  XSPerfAccumulate("ifuRedirec_needReopen",s1_close_ftb_req && io.redirectFromIFU)
+  XSPerfAccumulate("this_cycle_is_close",s2_close_ftb_req && io.s2_fire(0))
+  XSPerfAccumulate("this_cycle_is_open",!s2_close_ftb_req && io.s2_fire(0))
 
   io.out := io.in.bits.resp_in(0)
 
@@ -487,7 +475,7 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
 
   io.out.s2.fullPred.map {case fp => fp.multiHit := false.B}
 
-  io.out.s2.fullPred.zip(s2_ftb_hit_dup).foreach {case (fp, h) => fp.hit := h}
+  io.out.s2.fullPred.zip(s2_hit_dup).foreach {case (fp, h) => fp.hit := h}
   for (fullPred & s2_ftb_entry & s2_pc   <-
     io.out.s2.fullPred zip s2_ftbEntryDup zip s2_pc_dup) {
       // if (EnableFauFTB) {
@@ -519,11 +507,11 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   // io.out.lastStageMeta := RegEnable(RegEnable(
   //   FTBMeta(writeWay.asUInt, s1_ftbHit, s1_uftbHitDup(dupForFtb), GTimer()).asUInt,
   //   io.s1_fire(dupForFtb)), io.s2_fire(dupForFtb))
-
-  // io.out.s1_uftbHit := io.fauftb_entry_hit_in
-  // val s1_uftbHasIndirect = io.fauftb_entry_in.jmpValid &&
-  //   io.fauftb_entry_in.isJalr && !io.fauftb_entry_in.isRet // uFTB determines that it's real JALR, RET and JAL are excluded
-  // io.out.s1_uftbHasIndirect := s1_uftbHasIndirect
+  io.out.s1_ftbCloseReq := s1_close_ftb_req
+  io.out.s1_uftbHit := io.fauftb_entry_hit_in
+  val s1_uftbHasIndirect = io.fauftb_entry_in.jmpValid &&
+    io.fauftb_entry_in.isJalr && !io.fauftb_entry_in.isRet // uFTB determines that it's real JALR, RET and JAL are excluded
+  io.out.s1_uftbHasIndirect := s1_uftbHasIndirect
 
   // always taken logic
   for (out_fp & in_fp & s2_hit & s2_ftb_entry <-
