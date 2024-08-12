@@ -150,7 +150,7 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
       misc.l2_binder.get :*= l2.node :*= l2InputBuffers.get(0).node :*= misc.l1_xbar
       l2.pf_recv_node.map {l2_node =>
           println("Connecting L1 prefetcher to L2!")
-          core.exuBlock.memoryBlock.pf_sender_opt.map(sender => l2_node := sender)
+          core.exuBlock.memoryBlock.l2_pf_sender_opt.map(sender => l2_node := sender)
       }
     case None =>
   }
