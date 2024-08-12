@@ -55,6 +55,7 @@ class IntegerIssueInfoGenerator(implicit p: Parameters) extends XSModule{
   io.out.bits.lpv.zip(ib.lpv.transpose).foreach({case(o, i) => o := i.reduce(_|_)})
   io.out.bits.ftqPtr := ib.ftqPtr
   io.out.bits.ftqOffset := ib.ftqOffset
+  io.out.bits.isFirstIssue := DontCare
 }
 class IntegerStatusArrayEntry(implicit p: Parameters) extends BasicStatusArrayEntry(2){
   val state = EntryState()

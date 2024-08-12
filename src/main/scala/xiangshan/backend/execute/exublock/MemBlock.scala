@@ -69,6 +69,7 @@ class MemIssueRouter(implicit p: Parameters) extends LazyModule{
       assert(ob.issue.ready === true.B)
       ob.rsIdx := ib.rsIdx
       ob.auxValid := ib.auxValid && ib.issue.bits.uop.ctrl.fuType === oe._2.fuConfigs.head.fuType
+      ob.isFirstIssue := ib.isFirstIssue
       if (oe._2.fuConfigs.head.name == "sta") {
         ib.rsFeedback.feedbackSlowStore := ob.rsFeedback.feedbackSlowStore
       }
@@ -633,6 +634,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
     val lduValid = lduIssues(i).issue.valid && !lduIssues(i).issue.bits.uop.robIdx.needFlush(loadUnits(i).io.redirect)
 //    loadUnits(i).io.rsIdx := Mux(selSldu, slduIssues(i).rsIdx, lduIssues(i).rsIdx)
     loadUnits(i).io.rsIdx := lduIssues(i).rsIdx
+    loadUnits(i).io.isFirstIssue := lduIssues(i).isFirstIssue
     // get input form dispatch
 //    loadUnits(i).io.rsIssueIn.valid := Mux(selSldu, slduValid, lduValid)
 //    loadUnits(i).io.rsIssueIn.bits := Mux(selSldu, slduIssues(i).issue.bits, lduIssues(i).issue.bits)

@@ -63,6 +63,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
     // S0: reservationStation issueIn
     val rsIssueIn = Flipped(DecoupledIO(new ExuInput))
     val rsIdx = Input(new RsIdx)
+    val isFirstIssue = Input(Bool())
     // S0: replayQueue issueIn
     val replayQIssueIn = Flipped(DecoupledIO(new ReplayQueueIssueBundle))
     // S0: fastReplay from LoadS1
@@ -148,6 +149,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_rsIssue.uop := rsIssueIn.bits.uop
   s0_rsIssue.vm := rsIssueIn.bits.vm
   s0_rsIssue.rsIdx := io.rsIdx
+  s0_rsIssue.isFirstIssue := io.isFirstIssue
   s0_rsIssue.vaddr := rsIssueIn.bits.src(0) + SignExt(rsIssueIn.bits.uop.ctrl.imm(11,0), VAddrBits)
   s0_rsIssue.replayCause.foreach(_ := false.B)
   s0_rsIssue.schedIndex := 0.U
@@ -158,6 +160,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_replayQIssue.uop := replayIssueIn.bits.uop
   s0_replayQIssue.vm := 0.U
   s0_replayQIssue.rsIdx := DontCare
+  s0_replayQIssue.isFirstIssue := false.B
   s0_replayQIssue.vaddr := replayIssueIn.bits.vaddr
   s0_replayQIssue.replayCause.foreach(_ := false.B)
   s0_replayQIssue.schedIndex := replayIssueIn.bits.schedIndex
@@ -168,6 +171,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_fastRepIssue.uop := fastReplayIn.bits.uop
   s0_fastRepIssue.vm := 0.U
   s0_fastRepIssue.rsIdx := fastReplayIn.bits.rsIdx
+  s0_fastRepIssue.isFirstIssue := false.B
   s0_fastRepIssue.vaddr := fastReplayIn.bits.vaddr
   s0_fastRepIssue.replayCause.foreach(_ := false.B)
   s0_fastRepIssue.schedIndex := fastReplayIn.bits.replay.schedIndex
@@ -246,6 +250,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   s0_out.bits.uop.cf.exceptionVec(loadAddrMisaligned) := !s0_addrAligned && s0_EnableMem && !s0_isSoftPrefetch
   s0_out.bits.uop.cf.exceptionVec(loadPageFault) := illegalAddr && s0_EnableMem & io.vmEnable && !s0_isSoftPrefetch
   s0_out.bits.rsIdx := s0_sel_src.rsIdx
+  s0_out.bits.isFirstIssue := s0_sel_src.isFirstIssue
   s0_out.bits.replay.replayCause.foreach(_ := false.B)
   s0_out.bits.isSoftPrefetch := s0_isSoftPrefetch
   s0_out.bits.debugCause := s0_sel_src.debugCause

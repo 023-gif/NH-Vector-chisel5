@@ -339,6 +339,7 @@ class MemoryReservationStationImpl(outer:MemoryReservationStation, param:RsParam
       iss._1.hold := false.B
       iss._1.auxValid := loadIssueDriver.io.deq.fire
       iss._1.specialPsrc := DontCare
+      iss._1.isFirstIssue := loadIssueDriver.io.deq.bits.isFirstIssue
       iss._1.specialPsrcType := DontCare
       iss._1.specialPsrcRen := false.B
       loadIssueDriver.io.deq.ready := iss._1.issue.ready

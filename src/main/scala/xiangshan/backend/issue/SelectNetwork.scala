@@ -41,6 +41,7 @@ class SelectInfo(implicit p: Parameters) extends XSBundle{
   val isSgOrStride = Bool()
   val ftqPtr = new FtqPtr
   val ftqOffset = UInt(log2Up(PredictWidth).W)
+  val isFirstIssue = Bool()
 }
 
 class SelectResp(val bankIdxWidth:Int, entryIdxWidth:Int)(implicit p: Parameters) extends XSBundle {

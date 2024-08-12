@@ -62,6 +62,7 @@ sealed class BasicMemoryIssueInfoGenerator(implicit p: Parameters) extends XSMod
   io.out.bits.isSgOrStride := ib.srcType(1) === SrcType.reg || ib.srcType(1) === SrcType.vec
   io.out.bits.ftqPtr := ib.ftqPtr
   io.out.bits.ftqOffset := ib.ftqOffset
+  io.out.bits.isFirstIssue := ib.isFirstIssue
 }
 
 class ReplayStatus extends Bundle {
@@ -314,6 +315,11 @@ class MemoryStatusArrayEntryUpdateNetwork(stuNum:Int, wakeupWidth:Int, regWkpIdx
 
   when(needReplay){
     miscNext.bits.replayPenalty := Mux(io.entry.bits.replayPenalty === 0xF.U, 0xF.U, io.entry.bits.replayPenalty + 1.U)
+  }
+
+  when(staLoadStateNext === s_ready &&
+    ((staLoadState === s_wait_cancel) || (staLoadState === s_wait_replay) || (staLoadState === s_wait_counter))){
+    miscNext.bits.isFirstIssue := false.B
   }
 
   when(io.entry.valid){

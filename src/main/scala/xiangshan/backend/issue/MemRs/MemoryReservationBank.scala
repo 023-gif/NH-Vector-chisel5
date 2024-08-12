@@ -95,7 +95,7 @@ class MemoryReservationBank(entryNum:Int, stuNum:Int, wakeupWidth:Int, regWkpIdx
     enqEntry.sqIdx := in.sqIdx
     enqEntry.pdest := in.pdest
     enqEntry.waitTarget := in.cf.waitForRobIdx
-    enqEntry.isFirstIssue := false.B
+    enqEntry.isFirstIssue := true.B
     enqEntry.counter := 0.U
     enqEntry.isCbo := isCbo
     enqEntry.isCboZero := isCboZero

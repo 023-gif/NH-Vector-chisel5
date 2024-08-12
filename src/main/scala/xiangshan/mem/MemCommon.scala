@@ -130,7 +130,7 @@ class LsPipelineBundle(implicit p: Parameters) extends XSBundle with HasDCachePa
   val replay = new ReplayInfo
   // debug
   val debugCause = UInt(LoadReplayCauses.allCauses.W)
-  // For debug usage
+  // For Prefetch
   val isFirstIssue = Bool()
 
   def asPrefetchReqBundle(): PrefetchReqBundle = {
@@ -174,6 +174,7 @@ class LoadPipelineBundleS0(implicit p: Parameters) extends XSBundle {
 
   //Rs
   val rsIdx = new RsIdx
+  val isFirstIssue = Bool()
 
   // debug
   val debugCause = UInt(LoadReplayCauses.allCauses.W)

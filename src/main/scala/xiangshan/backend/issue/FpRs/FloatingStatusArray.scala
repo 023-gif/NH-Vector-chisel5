@@ -60,6 +60,7 @@ class FloatingIssueInfoGenerator(implicit p: Parameters) extends XSModule{
   io.out.bits.lpv.zip(ib.lpv.transpose).foreach({case(o, i) => o := i.reduce(_|_)})
   io.out.bits.ftqPtr := ib.ftqPtr
   io.out.bits.ftqOffset := ib.ftqOffset
+  io.out.bits.isFirstIssue := DontCare
 }
 class FloatingStatusArrayEntry(implicit p: Parameters) extends BasicStatusArrayEntry(3){
   val state = EntryState()
