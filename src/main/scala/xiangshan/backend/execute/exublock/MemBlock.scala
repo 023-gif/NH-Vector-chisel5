@@ -425,6 +425,8 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   sbuffer.io.hartId := io.hartId
   atomicsUnit.io.hartId := io.hartId
 
+  dcache.io.lqEmpty := lsq.io.lqEmpty
+
   private val redirectInDelay = Pipe(redirectIn)
   private val ldExeWbReqs = loadUnits.map(_.io.ldout)
   private val staExeWbReqs = storeUnits.map(_.io.stout)
@@ -691,16 +693,12 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
       // stride will train on miss or prefetch hit
       val source = loadUnits(i).io.prefetch_train_l1
       val hit_prefetch = loadUnits(i).io.hit_prefetch
-      // pf.stride_train(i).valid := source.valid && source.bits.isFirstIssue && (
-      //   source.bits.miss || hit_prefetch
-      // )
-      pf.stride_train(i).valid := source.valid && (
+      pf.stride_train(i).valid := source.valid && source.bits.isFirstIssue && (
         source.bits.miss || hit_prefetch
       )
       pf.stride_train(i).bits := source.bits
       pf.stride_train(i).bits.uop.cf.pc := pcDelay2Bits
-      // pf.io.ld_in(i).valid := source.valid && source.bits.isFirstIssue
-      pf.io.ld_in(i).valid := source.valid
+      pf.io.ld_in(i).valid := source.valid && source.bits.isFirstIssue
       pf.io.ld_in(i).bits := source.bits
     })
 

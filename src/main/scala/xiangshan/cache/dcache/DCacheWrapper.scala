@@ -483,6 +483,7 @@ class DCacheIO(implicit p: Parameters) extends DCacheBundle {
   val mshrFull = Output(Bool())
   val pf_req = Flipped(DecoupledIO(new L1PrefetchReq()))
   val l2_hint = Input(new DCacheTLDBypassLduIO)
+  val lqEmpty = Input(Bool())
 }
 
 
@@ -560,6 +561,7 @@ class DCacheImp(outer: DCache) extends LazyModuleImp(outer) with HasDCacheParame
 
   missQueue.io.hartId := io.hartId
   missQueue.io.l2_pf_store_only := RegNext(io.l2_pf_store_only, false.B)
+  missQueue.io.lqEmpty := io.lqEmpty
 
   val errors = ldu.map(_.io.error) ++ // load error
     Seq(mainPipe.io.error) // store / misc error

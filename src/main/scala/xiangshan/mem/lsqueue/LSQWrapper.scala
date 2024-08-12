@@ -85,6 +85,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val uncache = new UncacheWordIO
     val exceptionAddr = new ExceptionAddrIO
     val sqempty = Output(Bool())
+    val lqEmpty = Output(Bool())
     val issuePtrExt = Output(new SqPtr)
     val sqFull = Output(Bool())
     val lqFull = Output(Bool())
@@ -244,6 +245,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   io.lqFull := loadQueue.io.lqFull
   io.sqFull := storeQueue.io.sqFull
+  io.lqEmpty := loadQueue.io.lqEmpty
 
   val perfEvents = Seq(loadQueue, storeQueue).flatMap(_.getPerfEvents)
   generatePerfEvent()

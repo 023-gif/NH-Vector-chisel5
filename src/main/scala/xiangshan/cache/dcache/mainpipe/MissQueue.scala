@@ -238,6 +238,7 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
 
     // whether the pipeline reg has send out an acquire
     val acquire_fired_by_pipe_reg = Input(Bool())
+    val memSetPattenDetected = Input(Bool())
 
     val nMaxPrefetchEntry = Input(UInt(64.W))
   })
@@ -426,7 +427,8 @@ class MissEntry(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   when(GatedValidRegNext(io.id >= ((cfg.nMissEntries).U - io.nMaxPrefetchEntry))){
      io.primary_ready := !req_valid && !GatedValidRegNext(primary_fire)
   }.otherwise{
-    io.primary_ready := !req_valid && !io.req.bits.isPrefetch && !GatedValidRegNext(primary_fire)
+    // cannot accept prefetch req except when a memset patten is detected
+    io.primary_ready := !req_valid && (!io.req.bits.isPrefetch ||  io.memSetPattenDetected) && !GatedValidRegNext(primary_fire)
   }
  
   io.secondary_ready := should_merge(io.req.bits)
@@ -585,6 +587,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     val probe_block = Output(Bool())
 
     val full = Output(Bool())
+    val lqEmpty = Input(Bool())
 
     // only for performance counter
     // This is valid when an mshr has finished replacing a block (w_replace_resp),
@@ -643,6 +646,19 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   miss_req_pipe_reg.mshr_id := mshr_id
 
   assert(PopCount(Seq(alloc && io.req.valid, merge && io.req.valid)) <= 1.U, "allocate and merge a mshr in same cycle!")
+
+  val source_except_load_cnt = RegInit(0.U(10.W))
+  when(VecInit(req_mshr_handled_vec).asUInt.orR || req_pipeline_reg_handled) {
+    when(io.req.bits.isLoad) {
+      source_except_load_cnt := 0.U
+    }.otherwise {
+      when(io.req.bits.isStore) {
+        source_except_load_cnt := source_except_load_cnt + 1.U
+      }
+    }
+  }
+  val Threshold = 8
+  val memSetPattenDetected = GatedValidRegNext((source_except_load_cnt >= Threshold.U) && io.lqEmpty)
 
   val should_block_d = WireInit(false.B)
   val should_block_d_reg = RegNext(should_block_d, false.B)
@@ -736,6 +752,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
         e.io.primary_ready
       e.io.req.bits := io.req.bits.toMissReqWoStoreData()
       e.io.nMaxPrefetchEntry := nMaxPrefetchEntry
+      e.io.memSetPattenDetected := memSetPattenDetected
 
       e.io.mem_grant.valid := false.B
       e.io.mem_grant.bits := DontCare
@@ -802,20 +819,6 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   TLArbiter.lowest(edge, io.mem_acquire, acquire_sources:_*)
   TLArbiter.lowest(edge, io.mem_finish, entries.map(_.io.mem_finish):_*)
 
-  // arbiter_with_pipereg_N_dup(entries.map(_.io.refill_pipe_req), io.refill_pipe_req,
-  // io.refill_pipe_req_dup,
-  // Some("refill_pipe_req"))
-  // val out_refill_pipe_req = Wire(Decoupled(new RefillPipeReq))
-  // val out_refill_pipe_req_ctrl = Wire(Decoupled(new RefillPipeReqCtrl))
-  // out_refill_pipe_req_ctrl.valid := out_refill_pipe_req.valid
-  // out_refill_pipe_req_ctrl.bits := out_refill_pipe_req.bits.getCtrl
-  // out_refill_pipe_req.ready := out_refill_pipe_req_ctrl.ready
-  // arbiter(entries.map(_.io.refill_pipe_req), out_refill_pipe_req, Some("refill_pipe_req"))
-  // for (dup <- io.refill_pipe_req_dup) {
-  //   AddPipelineReg(out_refill_pipe_req_ctrl, dup, false.B)
-  // }
-  // AddPipelineReg(out_refill_pipe_req, io.refill_pipe_req, false.B)
-
   arbiter_with_pipereg(entries.map(_.io.replace_pipe_req), io.replace_pipe_req, Some("replace_pipe_req"))
   io.replace_pipe_req.bits.store_data := refill_data_raw.asUInt
   //load MSHR should wait replace.fire
@@ -825,13 +828,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     should_block_d := should_block_d_reg
   }
 
-
-
-
   fastArbiter(entries.map(_.io.main_pipe_req), io.main_pipe_req, Some("main_pipe_req"))
-  // io.main_pipe_req.bits.word_idx := refill_data_raw(0)(log2Up(blockWords) - 1, 0)
-  // io.main_pipe_req.bits.amo_mask := refill_data_raw(0)(log2Up(blockWords) + (DataBits / 8) - 1, log2Up(blockWords))
-  // io.main_pipe_req.bits.amo_data := refill_data_raw(1)(DataBits - 1, 0)
 
   io.probe_block := Cat(probe_block_vec).orR
 
@@ -859,6 +856,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
   XSPerfAccumulate("miss_req_allocate_prefetch", io.req.fire && alloc &&  io.req.bits.isPrefetch)
   XSPerfAccumulate("miss_req_merge_prefetch", io.req.fire && merge && io.req.bits.isPrefetch)
   XSPerfAccumulate("miss_req_reject_prefetch", io.req.valid && reject && io.req.bits.isPrefetch)
+  XSPerfAccumulate("memSetPattenDetected", memSetPattenDetected)
   val max_inflight = RegInit(0.U((log2Up(cfg.nMissEntries) + 1).W))
   val num_valids = PopCount(~Cat(primary_ready_vec).asUInt)
   when (num_valids > max_inflight) {

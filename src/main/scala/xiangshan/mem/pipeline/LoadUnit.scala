@@ -510,7 +510,6 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   io.prefetch_train_l1.valid := s2_out.valid && !s2_out.bits.mmio
   io.prefetch_train_l1.bits := s2_out.bits
   io.prefetch_train_l1.bits.miss := io.dcache.resp.bits.miss
-  io.prefetch_train_l1.bits.isFirstIssue := !s2_out.bits.replay.isReplayQReplay
   io.hit_prefetch := isFromL1Prefetch(io.dcache.resp.bits.meta_prefetch)
 
 
