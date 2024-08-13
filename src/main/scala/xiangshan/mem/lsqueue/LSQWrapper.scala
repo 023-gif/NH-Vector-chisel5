@@ -85,6 +85,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val uncache = new UncacheWordIO
     val exceptionAddr = new ExceptionAddrIO
     val sqempty = Output(Bool())
+    val lqEmpty = Output(Bool())
     val issuePtrExt = Output(new SqPtr)
     val sqFull = Output(Bool())
     val lqFull = Output(Bool())
@@ -100,7 +101,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
     val replayQIssue = Vec(LoadPipelineWidth, DecoupledIO(new ReplayQueueIssueBundle))
     val replayQFull = Output(Bool())
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
-    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
+    val tlDchannelWakeup = Input(Vec(2, new DCacheTLDBypassLduIO))
     val mmioWb = DecoupledIO(new ExuOutput)
     val storeViolationQuery = Vec(StorePipelineWidth, Flipped(ValidIO(new storeRAWQueryBundle)))
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //Load S2 enq
@@ -244,6 +245,7 @@ class LsqWrappper(implicit p: Parameters) extends XSModule with HasDCacheParamet
 
   io.lqFull := loadQueue.io.lqFull
   io.sqFull := storeQueue.io.sqFull
+  io.lqEmpty := loadQueue.io.lqEmpty
 
   val perfEvents = Seq(loadQueue, storeQueue).flatMap(_.getPerfEvents)
   generatePerfEvent()

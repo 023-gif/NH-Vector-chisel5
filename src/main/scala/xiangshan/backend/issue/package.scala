@@ -131,6 +131,7 @@ package object issue {
     val rsIdx: RsIdx = Output(new RsIdx)
     val rsFeedback: RSFeedbackIO = Flipped(new RSFeedbackIO)
     val auxValid = Output(Bool())
+    val isFirstIssue = Output(Bool())
     val hold = Output(Bool())
     val specialPsrc = Output(UInt(PhyRegIdxWidth.W))
     val specialPsrcType = Output(SrcType())

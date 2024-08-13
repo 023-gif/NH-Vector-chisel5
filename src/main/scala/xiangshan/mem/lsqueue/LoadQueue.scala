@@ -127,7 +127,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val uncache = new UncacheWordIO
     //wakeup info
     val tlbWakeup = Flipped(ValidIO(new LoadTLBWakeUpBundle))
-    val tlDchannelWakeup = Input(new DCacheTLDBypassLduIO)
+    val tlDchannelWakeup = Input(Vec(2, new DCacheTLDBypassLduIO))
     val mshrFull = Input(Bool())
     //store load violation
     val loadEnqRAW = Vec(LoadPipelineWidth, Flipped(new LoadEnqRAWBundle)) //LoadUnit S2 enq
@@ -153,6 +153,7 @@ class LoadQueue(implicit p: Parameters) extends XSModule
     val lqFull = Output(Bool())
     val lqCancelCnt = Output(UInt(log2Up(LoadQueueSize + 1).W))
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
+    val lqEmpty = Output(Bool())
     //debug info
     val debug_deqPtr = Input(new RobPtr)
     val debug_enqPtr = Input(new RobPtr)
@@ -189,6 +190,8 @@ class LoadQueue(implicit p: Parameters) extends XSModule
 
   private val validCount = distanceBetween(enqPtrExt(0), deqPtrExt)
   private val allowEnqueue = validCount <= (LoadQueueSize - 2).U
+
+  io.lqEmpty := RegNext(validCount === 0.U)
 
   private val deqMask = UIntToMask(deqPtr, LoadQueueSize)
   private val enqMask = UIntToMask(enqPtr, LoadQueueSize)

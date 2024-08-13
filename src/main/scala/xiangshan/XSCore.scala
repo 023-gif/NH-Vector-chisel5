@@ -35,6 +35,7 @@ import system.HasSoCParameter
 import utils._
 import xiangshan.backend._
 import xiangshan.backend.execute.fu.csr.CSRConst.ModeM
+import xiangshan.cache.DCacheTLDBypassLduIO
 import xiangshan.cache.mmu._
 import xiangshan.frontend._
 import xiangshan.vector.HasVectorParameters
@@ -89,6 +90,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
     val perfEvents = Input(Vec(numPCntL2 * coreParams.L2NBanks, new PerfEvent))
     val beu_errors = Output(new XSL1BusErrors())
     val dfx_reset = Input(new DFTResetSignals())
+    val l2_hint = Input(new DCacheTLDBypassLduIO)
   })
 
   println(s"FPGAPlatform:${env.FPGAPlatform} EnableDebug:${env.EnableDebug}")
@@ -110,6 +112,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   io.cpu_halt := ctrlBlock.io.cpu_halt
   exuBlock.io.dfx_reset := io.dfx_reset
   exuBlock.io.hartId := io.hartId
+  exuBlock.io.l2_hint := io.l2_hint
   frontend.io.reset_vector := io.reset_vector
 
 
@@ -205,10 +208,14 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
 
   private val itlbRepeater1 = PTWRepeater(frontend.io.ptw, fenceio.sfence, csrioIn.tlb)
   private val itlbRepeater2 = PTWRepeater(itlbRepeater1.io.ptw, ptw.io.tlb(0), fenceio.sfence, csrioIn.tlb)
-  private val dtlbRepeater1  = PTWNewFilter(exuBlock.io.ptw, fenceio.sfence, csrioIn.tlb)
+//  private val dtlbRepeater1  = PTWNewFilter(exuBlock.io.ptw, fenceio.sfence, csrioIn.tlb)
+  private val dtlbRepeater1  = PTWFilter(exuBlock.io.ptw, fenceio.sfence, csrioIn.tlb, l2tlbParams.filterSize)
   private val dtlbRepeater2  = PTWRepeaterNB(passReady = false, dtlbRepeater1.io.ptw, ptw.io.tlb(1), fenceio.sfence, csrioIn.tlb)
 
-  exuBlock.io.tlb_hint <> dtlbRepeater1.io.hint.get
+//  exuBlock.io.tlb_hint <> dtlbRepeater1.io.hint.get
+  exuBlock.io.tlb_hint <> DontCare
+  exuBlock.io.tlb_wakeUp.valid := dtlbRepeater1.io.ptw.resp.valid
+  exuBlock.io.tlb_wakeUp.bits := dtlbRepeater1.io.ptw.resp.bits
 
   ptw.io.sfence := fenceio.sfence
   ptw.io.csr.tlb <> csrioIn.tlb

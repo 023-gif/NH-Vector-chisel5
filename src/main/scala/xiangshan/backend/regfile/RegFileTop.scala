@@ -249,6 +249,7 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           val issueValidReg = RegInit(false.B)
           val auxValidReg = RegInit(false.B)
           val issueExuInReg = Reg(new ExuInput)
+          val isFirstIssueReg = Reg(Bool())
           val rsIdxReg = Reg(new RsIdx)
           val replayStop = io.ldStop(exuComplexParam.id)
 
@@ -266,12 +267,14 @@ class RegFileTop(extraScalarRfReadPort: Int)(implicit p:Parameters) extends Lazy
           when(enqFire) {
             issueValidReg := !exuInBundle.uop.robIdx.needFlush(io.redirect) //issue driver deq.valid has no needFlush
             issueExuInReg := exuInBundle
+            isFirstIssueReg := bi.isFirstIssue
             rsIdxReg := bi.rsIdx
           }
 
           bo.issue.valid := issueValidReg && !replayStop
           bo.issue.bits := issueExuInReg
           bo.rsIdx := rsIdxReg
+          bo.isFirstIssue := isFirstIssueReg
           bo.auxValid := auxValidReg
           bo.issue.bits.uop.loadStoreEnable := true.B // This has been delayed
           bo.hold := false.B

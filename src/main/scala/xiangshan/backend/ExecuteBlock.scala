@@ -36,7 +36,8 @@ import xiangshan.backend.issue.IntRs.IntegerReservationStation
 import xiangshan.backend.issue.MemRs.MemoryReservationStation
 import xiangshan.backend.rob.RobLsqIO
 import xiangshan.backend.writeback.WriteBackNetwork
-import xiangshan.cache.mmu.BTlbPtwIO
+import xiangshan.cache.DCacheTLDBypassLduIO
+import xiangshan.cache.mmu.{BTlbPtwIO, PtwSectorResp, TlbHintIO}
 import xiangshan.frontend.FtqPtr
 import xiangshan.mem.LsqEnqIO
 import xiangshan.vector.HasVectorParameters
@@ -45,7 +46,6 @@ import xiangshan.vector.vbackend.vissue.vrs.VectorReservationStation
 import xiangshan.vector.vbackend.vregfile.VRegfileTop
 import xs.utils.{DFTResetSignals, ModuleNode, RegNextN, ResetGen, ResetGenNode}
 import xiangshan.mem._
-import xiangshan.cache.mmu.TlbHintIO
 class ExecuteBlock(val parentName:String = "Unknown")(implicit p:Parameters) extends LazyModule with HasXSParameter with HasVectorParameters {
   val integerReservationStation: IntegerReservationStation = LazyModule(new IntegerReservationStation)
   val floatingReservationStation: FloatingReservationStation = LazyModule(new FloatingReservationStation)
@@ -107,9 +107,11 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
     val enqLsq = new LsqEnqIO
     val ptw = new BTlbPtwIO(ld_tlb_ports + exuParameters.StuCnt)
     val tlb_hint = Flipped(new TlbHintIO)
+    val tlb_wakeUp = Flipped(ValidIO(new PtwSectorResp))
     val rob = Flipped(new RobLsqIO) // rob to lsq
     val lsqVecDeqCnt = Output(new LsqVecDeqIO)
     val lqDeq = Output(UInt(log2Up(CommitWidth + 1).W))
+    val l2_hint = Input(new DCacheTLDBypassLduIO)
 
     //Rename
     val integerAllocPregs = Vec(RenameWidth, Flipped(ValidIO(UInt(PhyRegIdxWidth.W))))
@@ -229,11 +231,13 @@ class ExecuteBlockImp(outer:ExecuteBlock) extends LazyModuleImp(outer)
 
   io.memBlk_csrUpdate := memBlk.io.csrUpdate
   memBlk.io.tlb_hint <> io.tlb_hint
+  memBlk.io.tlb_wakeUp <> io.tlb_wakeUp
   memBlk.io.csrCtrl <> intBlk.io.csrio.customCtrl
   memBlk.io.fenceToSbuffer <> intBlk.io.fenceio.sbuffer
   memBlk.io.sfence := intBlk.io.fenceio.sfence
   memBlk.io.tlbCsr <> intBlk.io.csrio.tlb
   memBlk.io.hartId := io.hartId
+  memBlk.io.l2_hint := io.l2_hint
   io.lqDeq := RegNext(memBlk.io.lqDeq)
 
   io.lsqVecDeqCnt <> memBlk.io.lsqVecDeqCnt

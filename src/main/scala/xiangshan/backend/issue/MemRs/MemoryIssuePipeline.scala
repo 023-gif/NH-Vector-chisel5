@@ -20,6 +20,7 @@ sealed class MemPipelineDeqBundle(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth
   val uop = new MicroOp
   val bankIdxOH: UInt = UInt(bankIdxWidth.W)
   val entryIdxOH: UInt = UInt(entryIdxWidth.W)
+  val isFirstIssue: Bool = Bool()
   val chosen: UInt = UInt(chosenNum.W)
   val stdSel: UInt = UInt(bankIdxWidth.W)
   val staSel: UInt = UInt(bankIdxWidth.W)
@@ -152,6 +153,7 @@ class MemoryIssuePipelineBlock(chosenNum:Int, bankIdxWidth:Int, entryIdxWidth:In
   io.deq.bits.uop.psrc := deqDataDriverReg.info.psrc
   io.deq.bits.uop.vm := deqDataDriverReg.info.vm
   io.deq.bits.uop.lpv.zip(deqDataDriverReg.info.lpv).foreach({case(a,b) => a := LogicShiftRight(b, 1)})
+  io.deq.bits.isFirstIssue := deqDataDriverReg.info.isFirstIssue
   io.deq.bits.entryIdxOH := deqDataDriverReg.entryIdxOH
   io.deq.bits.bankIdxOH := deqDataDriverReg.bankIdxOH
   io.deq.bits.uop.cf.ftqPtr := deqDataDriverReg.info.ftqPtr
