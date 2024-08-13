@@ -733,6 +733,8 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
     io.save_amo_row_data.bits.amo_data := io.req.bits.amo_data
   }
   val hasData = edge.hasData(io.mem_grant.bits)
+  val diff_refill = Wire(Bool())
+  diff_refill := merge && io.req.valid && !io.req.bits.cancel && io.req.bits.isLoad
 
   val nMaxPrefetchEntry = 14.U
   entries.zipWithIndex.foreach {
@@ -764,7 +766,7 @@ class MissQueue(edge: TLEdgeOut)(implicit p: Parameters) extends DCacheModule wi
             io.refill_to_sbuffer.bits.data := refill_row_data
             io.refill_to_sbuffer.bits.id := e.io.sbuffer_id
             io.refill_to_sbuffer.bits.refill_count := refill_count
-            when(e.io.need_refill_ldq) {
+            when(e.io.need_refill_ldq || diff_refill) {
               refill_ldq_data_raw(refill_count) := refill_row_data
               difftest_data_raw(refill_count) := refill_row_data
             }
