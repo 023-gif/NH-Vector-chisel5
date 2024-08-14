@@ -288,7 +288,11 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
   // predictors.io.out.ready := io.bpu_to_ftq.resp.ready
 
   val redirect_req = io.ftq_to_bpu.redirect
-  val do_redirect_dup = RegNext(dup(redirect_req), init=0.U.asTypeOf(dup(redirect_req)))
+  // val do_redirect_dup = RegNext(dup(redirect_req), init=0.U.asTypeOf(dup(redirect_req)))
+  val do_redirect = Wire(redirect_req.cloneType)
+  do_redirect.bits := RegEnable(redirect_req.bits, 0.U.asTypeOf(redirect_req.bits), redirect_req.valid)
+  do_redirect.valid := RegNext(redirect_req.valid, init = false.B)
+  val do_redirect_dup = dup_seq(do_redirect)
   do_redirect_dup.foreach(dontTouch(_))
 
   // Pipeline logic
@@ -604,8 +608,14 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
   io.bpu_to_ftq.resp.bits.s3.hasRedirect.zip(s3_redirect_dup).foreach {case (hr, r) => hr := r}
   io.bpu_to_ftq.resp.bits.s3.ftqIdx := s3_ftq_idx
 
-  predictors.io.update := RegNext(dup(io.ftq_to_bpu.update))
-  predictors.io.update.foreach(_.bits.ghist := RegNext(getHist(io.ftq_to_bpu.update.bits.specInfo.histPtr)))
+  // predictors.io.update := RegNext(dup(io.ftq_to_bpu.update))
+  // predictors.io.update.foreach(_.bits.ghist := RegNext(getHist(io.ftq_to_bpu.update.bits.specInfo.histPtr)))
+  val update_req = io.ftq_to_bpu.update
+  val do_update = Wire(update_req.cloneType)
+  do_update.valid := RegNext(update_req.valid, init = false.B)
+  do_update.bits := RegEnable(update_req.bits, 0.U.asTypeOf(update_req.bits), update_req.valid)
+  do_update.bits.ghist := RegEnable(getHist(update_req.bits.specInfo.histPtr), 0.U.asTypeOf(update_req.bits.ghist), update_req.valid)
+  predictors.io.update := dup(do_update)
   
   val redirect_dup = do_redirect_dup.map(_.bits)
   predictors.io.redirect := do_redirect_dup(0)
