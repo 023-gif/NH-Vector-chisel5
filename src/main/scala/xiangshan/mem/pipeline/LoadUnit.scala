@@ -355,6 +355,7 @@ class LoadUnit(implicit p: Parameters) extends XSModule
   dontTouch(s1_causeReg)
 
   io.earlyWakeUp.wakeUp.valid := s1_in.valid && !s1_causeReg.need_rep
+//  io.earlyWakeUp.wakeUp.valid := false.B
   io.earlyWakeUp.wakeUp.bits.lpv := "b00010".U
   io.earlyWakeUp.wakeUp.bits.pdest := s1_in.bits.uop.pdest
   io.earlyWakeUp.wakeUp.bits.destType := MuxCase(SrcType.default, Seq(
