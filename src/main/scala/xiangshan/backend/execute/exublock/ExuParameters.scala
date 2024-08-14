@@ -21,19 +21,21 @@ package xiangshan.backend.execute.exublock
 
 case class ExuParameters
 (
-  AluMulDivStdCnt: Int = 1,
-  AluCnt: Int = 3,
+  AluCnt: Int = 2,
   BruJmpMiscCnt: Int = 2,
+  AluMulCnt: Int = 1,
+  AluMulDivStdCnt: Int = 1,
   FmaCnt:Int = 2,
   FmaDivCnt:Int = 1,
   FmaMiscCnt:Int = 1,
   LduCnt:Int = 2,
   StuCnt:Int = 2
 ){
-  val aluNum:Int = AluMulDivStdCnt + AluCnt
-  val mulNum:Int = AluMulDivStdCnt
+  val aluNum:Int = AluCnt + AluMulCnt + AluMulDivStdCnt
+  val mulNum:Int = AluMulDivStdCnt + AluMulCnt
   val jmpNum: Int = BruJmpMiscCnt
   val aluMulDivStdNum: Int = AluMulDivStdCnt
+  val aluMulNum: Int = AluMulCnt
   val LsExuCnt:Int = LduCnt + StuCnt
   val fmaNum:Int = FmaCnt + FmaDivCnt + FmaMiscCnt
 }

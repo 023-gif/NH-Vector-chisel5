@@ -35,12 +35,12 @@ import xiangshan.Redirect
 import xiangshan.FuType
 
 class IntegerBlock(implicit p:Parameters) extends BasicExuBlock {
-  //val jmps = Seq.tabulate(jmpNum)(idx => LazyModule(new JmpComplex(idx, 0)))
-  val aluMulDivStds = Seq.tabulate(aluMulDivStdNum)(idx => LazyModule(new AluMulDivStdComplex(idx, 0)))
   val alus = Seq.tabulate(aluNum)(idx => LazyModule(new AluComplex(idx, 0)))
   val bruJmpMiscs = Seq.tabulate(bruJmpMiscNum)(idx => LazyModule(new BruJmpMiscComplex(idx, 0)))
+  val aluMuls = Seq.tabulate(aluMulNum)(idx => LazyModule(new AluMulComplex(idx, 0)))
+  val aluMulDivStds = Seq.tabulate(aluMulDivStdNum)(idx => LazyModule(new AluMulDivStdComplex(idx, 0)))
 
-  val intComplexes = alus ++ bruJmpMiscs ++ aluMulDivStds
+  val intComplexes = alus ++ aluMuls ++ bruJmpMiscs ++ aluMulDivStds
   intComplexes.foreach(exucx => {
     exucx.issueNode :*= issueNode
     writebackNode :=* exucx.writebackNode
@@ -160,6 +160,7 @@ class IntegerBlockImp(outer:IntegerBlock) extends BasicExuBlockImp(outer){
   csr.csrio.exception                   := Pipe(io.csrio.exception)
 
   outer.aluMulDivStds.foreach(_.module.io.csr_frm := csr.csrio.fpu.frm)
+  outer.aluMuls.foreach(_.module.io.csr_frm := csr.csrio.fpu.frm)
 
   private val jmps = outer.bruJmpMiscs.map(_.module)
   private val fdiUJumpExcpVec = WireInit(VecInit(jmps.map(_.io.fdicallJumpExcpIO.isJumpExcp)))

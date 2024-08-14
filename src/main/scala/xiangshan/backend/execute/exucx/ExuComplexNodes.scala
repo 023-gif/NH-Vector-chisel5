@@ -63,6 +63,7 @@ case class ExuComplexParam
   val isAluMulDivStd: Boolean = hasAlu && hasMul && hasDiv
   val isBruJmpMisc: Boolean = hasBru && hasMisc && hasJmp
   val isAlu: Boolean = hasAlu && !hasMul && !hasDiv
+  val isAluMul: Boolean = hasAlu && hasMul && !hasDiv
 
   val needToken:Boolean = exuConfigs.map(_.needToken).reduce(_||_)
 
