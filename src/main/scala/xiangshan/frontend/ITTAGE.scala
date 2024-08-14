@@ -193,7 +193,8 @@ class ITTageTable
   val s0_bank_req_1h = get_bank_mask(s0_idx)
   val s1_bank_req_1h = RegEnable(s0_bank_req_1h, io.req.fire)
   
-  val us = Module(new Folded1WDataModuleTemplate(Bool(), nRows, 1, isSync=true, width=uFoldedWidth))
+  // val us = Module(new Folded1WDataModuleTemplate(Bool(), nRows, 1, isSync=true, width=uFoldedWidth))
+  val us = Module(new Folded1WDataModuleTemplate(Bool(), nRows, 1, isSync=true, width=uFoldedWidth, hasRen=true))
   // val table  = Module(new SRAMTemplate(new ITTageEntry, set=nRows, way=1, shouldReset=true, holdRead=true, singlePort=false))
   val table_banks = Seq.tabulate(nBanks)(idx =>
     Module(new FoldedSRAMTemplate(new ITTageEntry, set=nRows/nBanks, width=bankFoldWidth, shouldReset=true, holdRead=true, singlePort=true,
@@ -213,7 +214,8 @@ class ITTageTable
   }
 
   us.io.raddr(0) := s0_idx
-
+  us.io.ren.get(0) := io.req.valid
+  
   val table_banks_r = table_banks.map(_.io.r.resp.data(0))
 
   val resp_selected = Mux1H(s1_bank_req_1h, table_banks_r)
@@ -547,18 +549,29 @@ class ITTage(parentName:String = "Unknown")(implicit p: Parameters) extends Base
 
   for (i <- 0 until ITTageNTables) {
     tables(i).io.update.valid := RegNext(updateMask(i))
-    tables(i).io.update.correct := RegNext(updateCorrect(i))
-    tables(i).io.update.target := RegNext(updateTarget(i))
-    tables(i).io.update.old_target := RegNext(updateOldTarget(i))
-    tables(i).io.update.alloc := RegNext(updateAlloc(i))
-    tables(i).io.update.oldCtr := RegNext(updateOldCtr(i))
+    // tables(i).io.update.correct := RegNext(updateCorrect(i))
+    // tables(i).io.update.target := RegNext(updateTarget(i))
+    // tables(i).io.update.old_target := RegNext(updateOldTarget(i))
+    // tables(i).io.update.alloc := RegNext(updateAlloc(i))
+    // tables(i).io.update.oldCtr := RegNext(updateOldCtr(i))
 
-    tables(i).io.update.reset_u := RegNext(updateResetU)
-    tables(i).io.update.uValid := RegNext(updateUMask(i))
-    tables(i).io.update.u := RegNext(updateU(i))
-    tables(i).io.update.pc := RegNext(update.pc)
+    // tables(i).io.update.reset_u := RegNext(updateResetU)
+    // tables(i).io.update.uValid := RegNext(updateUMask(i))
+    // tables(i).io.update.u := RegNext(updateU(i))
+    // tables(i).io.update.pc := RegNext(update.pc)
+    tables(i).io.update.correct := RegEnable(updateCorrect(i), updateMask(i))
+    tables(i).io.update.target := RegEnable(updateTarget(i), updateMask(i))
+    tables(i).io.update.old_target := RegEnable(updateOldTarget(i), updateMask(i))
+    tables(i).io.update.alloc := RegEnable(updateAlloc(i), updateMask(i))
+    tables(i).io.update.oldCtr := RegEnable(updateOldCtr(i), updateMask(i))
+
+    tables(i).io.update.reset_u := RegEnable(updateResetU, updateMask(i))
+    tables(i).io.update.uValid := RegEnable(updateUMask(i), updateMask(i))
+    tables(i).io.update.u := RegEnable(updateU(i), updateMask(i))
+    tables(i).io.update.pc := RegEnable(update.pc, updateMask(i))    
     // use fetch pc instead of instruction pc
-    tables(i).io.update.ghist := RegNext(update.ghist)
+    //tables(i).io.update.ghist := RegNext(update.ghist)
+    tables(i).io.update.ghist := RegEnable(update.ghist, updateMask(i))
   }
 
   // all should be ready for req
