@@ -417,7 +417,6 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   do_backendredirect.bits := RegEnable(backendRedirect.bits, 0.U.asTypeOf(backendRedirect.bits), backendRedirect.valid)
   val backendRedirectReg = do_backendredirect
 
-
   val stage2Flush = backendRedirect.valid
   val backendFlush = stage2Flush || RegNext(stage2Flush)
   val ifuFlush = Wire(Bool())
@@ -494,7 +493,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   ftqPcMem.io.wdata.fromBranchPrediction(bpuInResp)
 
   //                                                            ifuRedirect + backendRedirect + commit
-  val ftqRedirectMem = Module(new SyncDataModuleTemplate(new FtqRedirectEntry, FtqSize, 1+1+1, 1, hasRen = true))
+  val ftqRedirectMem = Module(new SyncDataModuleTemplate(new FtqRedirectEntry, FtqSize, 1+1+1, 1, "FtqEntry"))
   // these info is intended to enq at the last stage of bpu
   ftqRedirectMem.io.wen(0) := io.fromBpu.resp.bits.lastStage.valid(dupForFtq)
   ftqRedirectMem.io.waddr(0) := io.fromBpu.resp.bits.lastStage.ftqIdx.value
@@ -515,8 +514,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   }
 
   //                                                            ifuRedirect + backendRedirect + commit
-  // val ftbEntryMem = Module(new SyncDataModuleTemplate(new FTBEntry_FtqMem, FtqSize, 1+1+1, 1, "FtqEntry"))
-  val ftbEntryMem = Module(new SyncDataModuleTemplate(new FTBEntry_FtqMem, FtqSize, 1+1+1, 1, hasRen = true))
+  val ftbEntryMem = Module(new SyncDataModuleTemplate(new FTBEntry_FtqMem, FtqSize, 1+1+1, 1, "FtqEntry"))
   ftbEntryMem.io.wen(0) := io.fromBpu.resp.bits.lastStage.valid(dupForFtq)
   ftbEntryMem.io.waddr(0) := io.fromBpu.resp.bits.lastStage.ftqIdx.value
   ftbEntryMem.io.wdata(0) := io.fromBpu.resp.bits.lastStageFtbEntry
@@ -543,11 +541,11 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
 
   // modify registers one cycle later to cut critical path
   val lastCycleBpuIn = RegNext(bpuInFire)
-  val lastCycleBpuInPtr = RegNext(bpuInRespPtr)
+  val lastCycleBpuInPtr = RegEnable(bpuInRespPtr, bpuInFire)//RegNext(bpuInRespPtr)
   val lastCycleBpuInIdx = lastCycleBpuInPtr.value
-  val lastCycleBpuTarget = RegNext(bpuInResp.target(dupForFtq))
-  val lastCycleCfiIndex = RegNext(bpuInResp.cfiIndex(dupForFtq))
-  val lastCycleBpuInStage = RegNext(bpuInStage)
+  val lastCycleBpuTarget = RegEnable(bpuInResp.target(dupForFtq), bpuInFire)//RegNext(bpuInResp.target(dupForFtq))
+  val lastCycleCfiIndex = RegEnable(bpuInResp.cfiIndex(dupForFtq), bpuInFire)//RegNext(bpuInResp.cfiIndex(dupForFtq))
+  val lastCycleBpuInStage = RegEnable(bpuInStage, bpuInFire)//RegNext(bpuInStage)
 
   def extra_copyNum_for_commitStateQueue = 2
   val copied_last_cycle_bpu_in = VecInit(Seq.fill(copyNum+extra_copyNum_for_commitStateQueue)(RegNext(bpuInFire)))
@@ -665,7 +663,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
    */
   // 0  for ifu, and 1-4 for ICache
   val bpuInBypass           = RegEnable(ftqPcMem.io.wdata, bpuInFire)
-  val bpuInBypassPtr        = RegNext(bpuInRespPtr)
+  val bpuInBypassPtr        = RegEnable(bpuInRespPtr, bpuInFire)//RegNext(bpuInRespPtr)
   val lastCycleToIfuFire    = RegNext(io.toIfu.req.fire)
   val lastCycleToPfFire     = RegNext(io.toPrefetch.req.fire)
   val bpuInBypassDup        = VecInit(Seq.fill(copyNum)(RegEnable(ftqPcMem.io.wdata, bpuInFire)))
@@ -802,7 +800,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val ifuWbValid = pdWb.valid
   val ifuWbIdx = pdWb.bits.ftqIdx.value
   // read ports:                                                         commit update
-  val ftqPdMem = Module(new SyncDataModuleTemplate(new FtqPdEntry, FtqSize, 1, 1, hasRen = true))
+  val ftqPdMem = Module(new SyncDataModuleTemplate(new FtqPdEntry, FtqSize, 1, 1, "FtqPd"))
   ftqPdMem.io.wen.head := ifuWbValid
   ftqPdMem.io.waddr.head := pdWb.bits.ftqIdx.value
   ftqPdMem.io.wdata.head.fromPdWb(pdWb.bits)
@@ -827,7 +825,6 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     ifuWbPtr_write := ifuWbPtr + 1.U
   }
 
-  ftbEntryMem.io.ren.get.head := ifuWbValid
   ftbEntryMem.io.raddr.head := ifuWbIdx
   val hasFalseHit = WireInit(false.B)
   when (RegNext(hitPdValid)) {
@@ -873,10 +870,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
    */
 
   // redirect read cfiInfo, couples to redirectGen s2
-  ftqRedirectMem.io.ren.get.init.last := backendRedirect.valid
   ftqRedirectMem.io.raddr.init.last := backendRedirect.bits.ftqIdx.value
 
-  ftbEntryMem.io.ren.get.init.last := backendRedirect.valid
   ftbEntryMem.io.raddr.init.last := backendRedirect.bits.ftqIdx.value
 
   val stage3CfiInfo = ftqRedirectMem.io.rdata.init.last
@@ -919,10 +914,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val ifuRedirectToBpu = WireInit(ifuRedirectReg)
   ifuFlush := fromIfuRedirect.valid || ifuRedirectToBpu.valid
 
-  ftqRedirectMem.io.ren.get.head := fromIfuRedirect.valid
   ftqRedirectMem.io.raddr.head := fromIfuRedirect.bits.ftqIdx.value
 
-  ftbEntryMem.io.ren.get.head := fromIfuRedirect.valid
   ftbEntryMem.io.raddr.head := fromIfuRedirect.bits.ftqIdx.value
 
   val toBpuCfi = ifuRedirectToBpu.bits.cfiUpdate
@@ -1061,16 +1054,13 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     Mux(RegNext(commPtr === newestEntryPtr),
       RegNext(newestEntryTarget),
       RegNext(ftqPcMem.io.commPtrPlus1_rdata.startAddr))
-  ftqPdMem.io.ren.get.last := canCommit
   ftqPdMem.io.raddr.last := commPtr.value
   val commitPd = ftqPdMem.io.rdata.last
-  ftqRedirectMem.io.ren.get.last := canCommit
   ftqRedirectMem.io.raddr.last := commPtr.value
   val commitSpecInfo = ftqRedirectMem.io.rdata.last
   ftqMetaSram.io.ren(0) := canCommit
   ftqMetaSram.io.raddr(0) := commPtr.value
   val commitMeta = ftqMetaSram.io.rdata(0).meta
-  ftbEntryMem.io.ren.get.last := canCommit
   ftbEntryMem.io.raddr.last := commPtr.value
   val commitFtbEntry = ftqMetaSram.io.rdata(0).ftb_entry
 
@@ -1092,9 +1082,9 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     case (mis, state) => mis && state === c_commited
   })
   val canCommitHit = entryHitStatus(commPtr.value)
-  val commitHit = RegNext(canCommitHit)
-  val diff_commit_target = RegNext(updateTarget(commPtr.value)) // TODO: remove this
-  val commitStage = RegNext(predStage(commPtr.value))
+  val commitHit = RegEnable(canCommitHit, canCommit)//RegNext(canCommitHit)
+  val diff_commit_target = RegEnable(updateTarget(commPtr.value), canCommit)//RegNext(updateTarget(commPtr.value)) // TODO: remove this
+  val commitStage = RegEnable(predStage(commPtr.value), canCommit)//RegNext(predStage(commPtr.value))
   val commitValid = commitHit === h_hit || commitCfi.valid // hit or taken
 
   val toBpuHit = canCommitHit === h_hit || canCommitHit === h_false_hit
