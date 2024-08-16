@@ -204,3 +204,55 @@ class OldestSelectNetwork_TMP(bankNum:Int, entryNum:Int, issueNum:Int, val cfg:E
     XSPerfAccumulate(s"sel_${idx}_cancelled", driver.valid & cancelCond)
   }
 }
+
+class OldestSelectNetworkInt(bankNum:Int, entryNum:Int, issueNum:Int, val cfg:ExuConfig, haveEqual:Boolean, name:Option[String] = None)(implicit p: Parameters)
+  extends XSModule with HasPerfLogging {
+  require(issueNum <= bankNum && 0 < issueNum && bankNum % issueNum == 0, "Illegal number of issue ports are supported now!")
+  private val fuTypeList = cfg.fuConfigs.map(_.fuType)
+  val io = IO(new Bundle {
+    val redirect = Input(Valid(new Redirect))
+    val selectInfo = Input(Vec(bankNum, Vec(entryNum, Valid(new SelectInfo))))
+    val issueInfo = Vec(issueNum, Decoupled(new SelectResp(bankNum, entryNum)))
+    val earlyWakeUpCancel = Input(Vec(loadUnitNum, Bool()))
+  })
+  override val desiredName: String = name.getOrElse("SelectNetwork")
+
+  private val selectInputPerBank = io.selectInfo.zipWithIndex.map({ case (si, bidx) =>
+    si.zipWithIndex.map({ case (in, eidx) =>
+      val selInfo = Wire(Valid(new SelectResp(bankNum, entryNum)))
+      selInfo.valid := in.valid && fuTypeList.map(_ === in.bits.fuType).reduce(_ | _)
+      selInfo.bits.info := in.bits
+      selInfo.bits.bankIdxOH := (1 << bidx).U(bankNum.W)
+      selInfo.bits.entryIdxOH := (1 << eidx).U(entryNum.W)
+      selInfo
+    })
+  })
+  //oldest
+//    val iss = finalSelectResult(i)
+  private val finalSelectResult = Wire(Vec(issueNum, Valid(new SelectResp(bankNum, entryNum))))
+  val inSeq = selectInputPerBank.flatten
+  val mask = Wire(Vec(issueNum, UInt(inSeq.length.W)))
+  for(i <- 0 until issueNum) {
+    val mask_local = if(i == 0) 0.U(inSeq.length.W) else mask.take(i).reduce(_|_)
+    val selector = Module(new OldestSelectPolicy(inSeq.length, haveEqual))
+      selector.io.in.zip(inSeq).zipWithIndex.foreach({ case((in,info),idx) => {
+      in.valid := info.valid && !io.redirect.valid && !(mask_local(idx))
+      in.bits.robPtr := info.bits.info.robPtr
+      in.bits.lpv := info.bits.info.lpv
+    }})
+    finalSelectResult(i).valid := selector.io.out.valid
+    finalSelectResult(i).bits := Mux1H(selector.io.out.bits, inSeq.map(_.bits))
+    mask(i) := Mux(selector.io.out.valid, selector.io.out.bits, 0.U)
+  }
+
+  for (((outPort, driver), idx) <- io.issueInfo.zip(finalSelectResult).zipWithIndex) {
+    val cancelCond = driver.bits.info.lpv.zip(io.earlyWakeUpCancel).map({case(l, c) => l(0) & c}).reduce(_|_)
+    outPort.valid := driver.valid & !cancelCond & !io.redirect.valid
+    outPort.bits.bankIdxOH := driver.bits.bankIdxOH
+    outPort.bits.entryIdxOH := driver.bits.entryIdxOH
+    outPort.bits.info := driver.bits.info
+    outPort.bits.info.lpv.zip(driver.bits.info.lpv).foreach({ case (o, i) => o := LogicShiftRight(i, 1)})
+    XSPerfAccumulate(s"sel_${idx}_lpv_sel", driver.valid & Cat(driver.bits.info.lpv).orR)
+    XSPerfAccumulate(s"sel_${idx}_cancelled", driver.valid & cancelCond)
+  }
+}
