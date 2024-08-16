@@ -1045,18 +1045,25 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
 
   val validInstructions = commitStateQueue(commPtr.value).map(s => s === c_valid || s === c_commited)
   val lastInstructionStatus = PriorityMux(validInstructions.reverse.zip(commitStateQueue(commPtr.value).reverse))
-  val firstInstructionFlushed = commitStateQueueReg(commPtr.value)(0) === c_invalid
+  val firstInstructionFlushed = commitStateQueue(commPtr.value)(0) === c_invalid
   canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
     (isAfter(robCommPtr, commPtr) ||
-      validInstructions.reduce(_ || _) && lastInstructionStatus === c_committed)
+      validInstructions.reduce(_ || _) && lastInstructionStatus === c_commited)
   val canMoveCommPtr = commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
     (isAfter(robCommPtr, commPtr) ||
-      validInstructions.reduce(_ || _) && lastInstructionStatus === c_committed ||
+      validInstructions.reduce(_ || _) && lastInstructionStatus === c_commited ||
       firstInstructionFlushed)
 
+  // when (io.fromBackend.rob_commits.map(_.valid).reduce(_ | _)) {
+  //   robCommPtr_write := ParallelPriorityMux(io.fromBackend.rob_commits.map(_.valid).reverse, io.fromBackend.rob_commits.map(_.bits.ftqIdx).reverse)
+  // } .elsewhen (commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && noToCommit && !allEmpty) {
+  //   robCommPtr_write := commPtr
+  // } .otherwise {
+  //   robCommPtr_write := robCommPtr
+  // }
   when (io.fromBackend.rob_commits.map(_.valid).reduce(_ | _)) {
     robCommPtr_write := ParallelPriorityMux(io.fromBackend.rob_commits.map(_.valid).reverse, io.fromBackend.rob_commits.map(_.bits.ftqIdx).reverse)
-  } .elsewhen (commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && noToCommit && !allEmpty) {
+  } .elsewhen (isAfter(commPtr, robCommPtr)) {
     robCommPtr_write := commPtr
   } .otherwise {
     robCommPtr_write := robCommPtr
