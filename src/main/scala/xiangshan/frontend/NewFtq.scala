@@ -1039,9 +1039,20 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   //   Cat(commitStateQueue(commPtr.value).map(s => {
   //     s === c_invalid || s === c_commited
   //   })).andR
-  val noToCommit = commitStateQueue(commPtr.value).map(s => s =/= c_valid).reduce(_ && _)
-  val allEmpty = commitStateQueue(commPtr.value).map(s => s === c_invalid).reduce(_ && _)
-  canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && (isAfter(robCommPtr, commPtr) || noToCommit && !allEmpty)
+  // val noToCommit = commitStateQueue(commPtr.value).map(s => s =/= c_valid).reduce(_ && _)
+  // val allEmpty = commitStateQueue(commPtr.value).map(s => s === c_invalid).reduce(_ && _)
+  // canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && (isAfter(robCommPtr, commPtr) || noToCommit && !allEmpty)
+
+  val validInstructions = commitStateQueue(commPtr.value).map(s => s === c_valid || s === c_commited)
+  val lastInstructionStatus = PriorityMux(validInstructions.reverse.zip(commitStateQueue(commPtr.value).reverse))
+  val firstInstructionFlushed = commitStateQueueReg(commPtr.value)(0) === c_invalid
+  canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
+    (isAfter(robCommPtr, commPtr) ||
+      validInstructions.reduce(_ || _) && lastInstructionStatus === c_committed)
+  val canMoveCommPtr = commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
+    (isAfter(robCommPtr, commPtr) ||
+      validInstructions.reduce(_ || _) && lastInstructionStatus === c_committed ||
+      firstInstructionFlushed)
 
   when (io.fromBackend.rob_commits.map(_.valid).reduce(_ | _)) {
     robCommPtr_write := ParallelPriorityMux(io.fromBackend.rob_commits.map(_.valid).reverse, io.fromBackend.rob_commits.map(_.bits.ftqIdx).reverse)
@@ -1076,7 +1087,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   // need one cycle to read mem and srams
   val do_commit_ptr = RegNext(commPtr)
   val do_commit = RegNext(canCommit, init=false.B)
-  when (canCommit) {
+  when (canMoveCommPtr) {
     commPtr_write := commPtrPlus1
     commPtrPlus1_write := commPtrPlus1 + 1.U
   }
