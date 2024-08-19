@@ -523,7 +523,9 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   // multi-write
   val updateTarget = Reg(Vec(FtqSize, UInt(VAddrBits.W))) // could be taken target or fallThrough //TODO: remove this
   val newestEntryTarget = Reg(UInt(VAddrBits.W))
+  val newest_entry_target_modified = RegInit(false.B)
   val newestEntryPtr = Reg(new FtqPtr)
+  val newest_entry_ptr_modified = RegInit(false.B)
   val cfiIndexVec = Reg(Vec(FtqSize, ValidUndirectioned(UInt(log2Ceil(PredictWidth).W))))
   val mispredictVec = Reg(Vec(FtqSize, Vec(PredictWidth, Bool())))
   val predStage = Reg(Vec(FtqSize, UInt(2.W)))
@@ -551,13 +553,17 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val copied_last_cycle_bpu_in = VecInit(Seq.fill(copyNum+extra_copyNum_for_commitStateQueue)(RegNext(bpuInFire)))
   val copied_last_cycle_bpu_in_ptr_for_ftq = VecInit(Seq.fill(extra_copyNum_for_commitStateQueue)(RegNext(bpuInRespPtr)))
 
+  newest_entry_target_modified := false.B
+  newest_entry_ptr_modified := false.B
   when (lastCycleBpuIn) {
     entryFetchStatus(lastCycleBpuInIdx) := f_to_send
     cfiIndexVec(lastCycleBpuInIdx) := lastCycleCfiIndex
     predStage(lastCycleBpuInIdx) := lastCycleBpuInStage
 
     updateTarget(lastCycleBpuInIdx) := lastCycleBpuTarget // TODO: remove this
+    newest_entry_target_modified := true.B
     newestEntryTarget := lastCycleBpuTarget
+    newest_entry_ptr_modified := true.B
     newestEntryPtr := lastCycleBpuInPtr
   }
 
@@ -954,6 +960,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
       cfiIndexVec(r_idx).bits := r_offset
     }
     newestEntryTarget := redirect.bits.cfiUpdate.target
+    newest_entry_target_modified := true.B
+    newest_entry_ptr_modified := true.B
     newestEntryPtr := r_ptr
     updateTarget(r_idx) := redirect.bits.cfiUpdate.target // TODO: remove this
     if (isBackend) {
@@ -1052,7 +1060,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val commitPcBundle = RegNext(ftqPcMem.io.commPtr_rdata)
   val commitTarget =
     Mux(RegNext(commPtr === newestEntryPtr),
-      RegNext(newestEntryTarget),
+      RegEnable(newestEntryTarget, newest_entry_target_modified),//RegNext(newestEntryTarget),
       RegNext(ftqPcMem.io.commPtrPlus1_rdata.startAddr))
   ftqPdMem.io.raddr.last := commPtr.value
   val commitPd = ftqPdMem.io.rdata.last
