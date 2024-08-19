@@ -531,9 +531,17 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val predStage = Reg(Vec(FtqSize, UInt(2.W)))
 
   val c_invalid :: c_valid :: c_commited :: Nil = Enum(3)
-  val commitStateQueue = RegInit(VecInit(Seq.fill(FtqSize) {
+  val commitStateQueueReg = RegInit(VecInit(Seq.fill(FtqSize) {
     VecInit(Seq.fill(PredictWidth)(c_invalid))
   }))
+  val commitStateQueueEnable = WireInit(VecInit(Seq.fill(FtqSize)(false.B)))
+  val commitStateQueueNext = WireInit(commitStateQueueReg)
+
+  for (f <- 0 until FtqSize) {
+    when(commitStateQueueEnable(f)) {
+      commitStateQueueReg(f) := commitStateQueueNext(f)
+    }
+  }
 
   val f_to_send :: f_sent :: Nil = Enum(2)
   val entryFetchStatus = RegInit(VecInit(Seq.fill(FtqSize)(f_sent)))
@@ -581,7 +589,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
         require(FtqSize % extra_copyNum_for_commitStateQueue == 0)
         for (j <- 0 until perSetEntries) {
           when (ptr.value === (i*perSetEntries + j).U) {
-            commitStateQueue(i*perSetEntries + j) := VecInit(Seq.fill(PredictWidth)(c_invalid))
+            commitStateQueueNext(i*perSetEntries + j) := VecInit(Seq.fill(PredictWidth)(c_invalid))
+            commitStateQueueEnable(i * perSetEntries + j) := true.B
           }
         }
       }
@@ -822,7 +831,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     val comm_stq_wen = VecInit(pds.map(_.valid).zip(pdWb.bits.instrRange).map{
       case (v, inRange) => v && inRange
     })
-    (commitStateQueue(ifuWbIdx) zip comm_stq_wen).map{
+    commitStateQueueEnable(ifuWbIdx) := true.B
+    (commitStateQueueNext(ifuWbIdx) zip comm_stq_wen).map{
       case (qe, v) => when (v) { qe := c_valid }
     }
   }
@@ -1003,7 +1013,8 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     pfPtrPlus1_write := idx + 2.U
 
     when (notIfu) {
-      commitStateQueue(idx.value).zipWithIndex.foreach({ case (s, i) =>
+      commitStateQueueEnable(idx.value) := true.B
+      commitStateQueueNext(idx.value).zipWithIndex.foreach({ case (s, i) =>
         when(i.U > offset || i.U === offset && flushItSelf){
           s := c_invalid
         }
@@ -1018,19 +1029,22 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   // commit
   for (c <- io.fromBackend.rob_commits) {
     when(c.valid) {
-      commitStateQueue(c.bits.ftqIdx.value)(c.bits.ftqOffset) := c_commited
+      commitStateQueueEnable(c.bits.ftqIdx.value) := true.B
+      commitStateQueueNext(c.bits.ftqIdx.value)(c.bits.ftqOffset) := c_commited
       // TODO: remove this
       // For instruction fusions, we also update the next instruction
       when (c.bits.commitType === 4.U) {
-        commitStateQueue(c.bits.ftqIdx.value)(c.bits.ftqOffset + 1.U) := c_commited
+        commitStateQueueNext(c.bits.ftqIdx.value)(c.bits.ftqOffset + 1.U) := c_commited
       }.elsewhen(c.bits.commitType === 5.U) {
-        commitStateQueue(c.bits.ftqIdx.value)(c.bits.ftqOffset + 2.U) := c_commited
+        commitStateQueueNext(c.bits.ftqIdx.value)(c.bits.ftqOffset + 2.U) := c_commited
       }.elsewhen(c.bits.commitType === 6.U) {
         val index = (c.bits.ftqIdx + 1.U).value
-        commitStateQueue(index)(0) := c_commited
+        commitStateQueueEnable(index) := true.B
+        commitStateQueueNext(index)(0) := c_commited
       }.elsewhen(c.bits.commitType === 7.U) {
         val index = (c.bits.ftqIdx + 1.U).value
-        commitStateQueue(index)(1) := c_commited
+        commitStateQueueEnable(index) := true.B
+        commitStateQueueNext(index)(1) := c_commited
       }
     }
   }
@@ -1047,13 +1061,13 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   mayHaveStallFromBpu := BpuFtbUpdateStall =/= 0.U
 
   canCommit := commPtr =/= ifuWbPtr && !mayHaveStallFromBpu &&
-    Cat(commitStateQueue(commPtr.value).map(s => {
+    Cat(commitStateQueueReg(commPtr.value).map(s => {
       s === c_invalid || s === c_commited
     })).andR
 
   val mmioReadPtr = io.mmioCommitRead.mmioFtqPtr
   val mmioLastCommit = isBefore(commPtr, mmioReadPtr) && (isAfter(ifuPtr,mmioReadPtr)  ||  mmioReadPtr ===   ifuPtr) &&
-                       Cat(commitStateQueue(mmioReadPtr.value).map(s => { s === c_invalid || s === c_commited})).andR
+                       Cat(commitStateQueueReg(mmioReadPtr.value).map(s => { s === c_invalid || s === c_commited})).andR
   io.mmioCommitRead.mmioLastCommit := RegNext(mmioLastCommit)
 
   // commit reads
@@ -1079,9 +1093,9 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     commPtr_write := commPtrPlus1
     commPtrPlus1_write := commPtrPlus1 + 1.U
   }
-  val commitStatus = RegNext(commitStateQueue(commPtr.value))
+  val commitStatus = RegNext(commitStateQueueReg(commPtr.value))
   val canCommitCfi = WireInit(cfiIndexVec(commPtr.value))
-  when (commitStateQueue(commPtr.value)(canCommitCfi.bits) =/= c_commited) {
+  when (commitStateQueueReg(commPtr.value)(canCommitCfi.bits) =/= c_commited) {
     canCommitCfi.valid := false.B
   }
   val commitCfi = RegNext(canCommitCfi)
