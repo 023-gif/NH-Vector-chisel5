@@ -392,6 +392,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   io.exception.valid := RegNext(exceptionHappen, false.B) && !exceptionWaitingRedirect
   io.exception.bits.uop := RegEnable(debug_deqUop, exceptionHappen && !exceptionWaitingRedirect)
+  io.exception.bits.uop.robIdx := RegEnable(deqPtr, exceptionHappen && !exceptionWaitingRedirect)
   io.exception.bits.uop.ctrl.commitType := RegEnable(deqEntryData.commitType, exceptionHappen && !exceptionWaitingRedirect)
   io.exception.bits.uop.cf.exceptionVec := RegEnable(exceptionDataRead.bits.exceptionVec, exceptionHappen && !exceptionWaitingRedirect)
   io.exception.bits.uop.ctrl.singleStep := RegEnable(exceptionDataRead.bits.singleStep, exceptionHappen && !exceptionWaitingRedirect)
@@ -822,9 +823,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
 
   // interrupt_safe
   for (i <- 0 until RenameWidth) {
-    // We RegNext the updates for better timing.
-    // Note that instructions won't change the system's states in this cycle.
-    when(RegNext(canEnqueue(i))) {
+    when(canEnqueue(i)) {
       // For now, we allow non-load-store instructions to trigger interrupts
       // For MMIO instructions, they should not trigger interrupts since they may
       // be sent to lower level before it writes back.
@@ -832,7 +831,7 @@ class RobImp(outer: Rob)(implicit p: Parameters) extends LazyModuleImp(outer)
       // Thus, we don't allow load/store instructions to trigger an interrupt.
       // TODO: support non-MMIO load-store instructions to trigger interrupts
       val allow_interrupts = !CommitType.isLoadStore(io.enq.req(i).bits.ctrl.commitType) && !(io.enq.req(i).bits.ctrl.fuOpType === CSROpType.jmp)
-      interrupt_safe(RegNext(allocatePtrVec(i).value)) := RegNext(allow_interrupts)
+      interrupt_safe(allocatePtrVec(i).value) := allow_interrupts
     }
   }
 

@@ -20,7 +20,7 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink.ClientStates
-import xs.utils.mbist.MBISTPipeline
+import xs.utils.mbist.MbistPipeline
 import xs.utils.sram.SRAMTemplate
 import xiangshan.cache.CacheInstrucion._
 
@@ -41,7 +41,7 @@ class ErrorWriteReq(implicit p: Parameters) extends MetaReadReq {
   val error = Bool()
 }
 
-class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DCacheModule {
+class TagArray(implicit p: Parameters) extends DCacheModule {
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new TagReadReq))
     val resp = Output(Vec(nWays, UInt((tagBits + ClientStates.width).W)))
@@ -66,10 +66,8 @@ class TagArray(parentName:String = "Unknown")(implicit p: Parameters) extends DC
   }
 
   val tag_array = Module(new SRAMTemplate(UInt((tagBits + ClientStates.width).W), set = nSets, way = nWays,
-    shouldReset = false, holdRead = false, singlePort = true, hasClkGate = true,
-    hasMbist = coreParams.hasMbist,
-    hasShareBus = coreParams.hasShareBus,
-    parentName = parentName
+    shouldReset = false, holdRead = false, singlePort = true,
+    hasMbist = coreParams.hasMbist
   ))
 
   // val ecc_array = Module(new SRAMTemplate(UInt(eccTagBits.W), set = nSets, way = nWays,
@@ -312,7 +310,7 @@ class DuplicatedTagArrayReg(readPorts: Int, parentName:String = "Unknown")(impli
 }
 
 
-class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit p: Parameters) extends DCacheModule {
+class DuplicatedTagArray(readPorts: Int)(implicit p: Parameters) extends DCacheModule {
   val io = IO(new Bundle() {
     val read = Vec(readPorts, Flipped(DecoupledIO(new TagReadReq)))
     val resp = Output(Vec(readPorts, Vec(nWays, UInt(encTagBits.W))))
@@ -323,12 +321,8 @@ class DuplicatedTagArray(readPorts: Int, parentName:String = "Unknown")(implicit
     val cacheOp_req_bits_opCode_dup = Input(Vec(11, UInt(XLEN.W)))
   })
 
-  val array = Seq.tabulate(readPorts) { idx => Module(new TagArray(parentName + s"array${idx}_")) }
-  val mbistPipeline = if(coreParams.hasMbist && coreParams.hasShareBus) {
-    MBISTPipeline.PlaceMbistPipeline(1, s"${parentName}_mbistPipe")
-  } else {
-    None
-  }
+  val array = Seq.tabulate(readPorts) { idx => Module(new TagArray) }
+  val mbistPipeline = MbistPipeline.PlaceMbistPipeline(1, place = coreParams.hasMbist)
 
   def getECCFromEncTag(encTag: UInt) = {
     require(encTag.getWidth == encTagBits)

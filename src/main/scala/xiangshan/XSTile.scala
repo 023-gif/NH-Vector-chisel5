@@ -9,7 +9,7 @@ import freechips.rocketchip.interrupts._
 import freechips.rocketchip.tile.{BusErrorUnit, BusErrorUnitParams, BusErrors}
 import freechips.rocketchip.tilelink._
 import xs.utils.tl.TLLogger
-import xs.utils.mbist.MBISTInterface
+import xs.utils.mbist.MbistInterface
 import huancun.{HCCacheParamsKey, HuanCun}
 import coupledL2.{CoupledL2, L2ParamKey}
 import xs.utils.{DFTResetSignals, ResetGen}
@@ -18,7 +18,7 @@ import top.BusPerfMonitor
 import utils.{IntBuffer, TLClientsMerger, TLEdgeBuffer}
 import xiangshan.cache.DCacheTLDBypassLduIO
 import xs.utils.perf.DebugOptionsKey
-import xs.utils.sram.BroadCastBundle
+import xs.utils.sram.SramBroadcastBundle
 
 class L1BusErrorUnitInfo(implicit val p: Parameters) extends Bundle with HasSoCParameter {
   val ecc_error = Valid(UInt(soc.PAddrBits.W))
@@ -55,8 +55,7 @@ class XSTileMisc()(implicit p: Parameters) extends LazyModule
   val l1d_logger = TLLogger(s"L2_L1D_${coreParams.HartId}", !debugOpts.FPGAPlatform && debugOpts.EnableChiselDB)
   val l2_binder = coreParams.L2CacheParamsOpt.map(_ => BankBinder(coreParams.L2NBanks, 64))
 
-  val i_mmio_port = TLTempNode()
-  val d_mmio_port = TLTempNode()
+  val coreUncachePort = TLTempNode()
 
   busPMU := l1d_logger
   l1_xbar :=* busPMU
@@ -68,10 +67,9 @@ class XSTileMisc()(implicit p: Parameters) extends LazyModule
       memory_port := l1_xbar
   }
 
-  mmio_xbar := TLBuffer.chainNode(2) := i_mmio_port
-  mmio_xbar := TLBuffer.chainNode(2) := d_mmio_port
-  beu.node := TLBuffer.chainNode(3) := mmio_xbar
-  mmio_port := TLBuffer.chainNode(3) := mmio_xbar
+  mmio_xbar := TLBuffer.chainNode(1) := coreUncachePort
+  beu.node := TLBuffer.chainNode(1) := mmio_xbar
+  mmio_port := TLBuffer.chainNode(2) := mmio_xbar
 
   lazy val module = new XSTileMiscImp(this)
 }
@@ -81,7 +79,6 @@ class XSTileMiscImp(outer:XSTileMisc)(implicit p: Parameters) extends LazyModule
 }
 
 class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends LazyModule
-//class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends LazyModule
   with HasXSParameter
   with HasSoCParameter {
   val core = LazyModule(new XSCore())
@@ -116,9 +113,9 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
 
   def chainBuffer(depth: Int, n: String): (Seq[LazyModule], TLNode) = {
     val buffers = Seq.fill(depth){ LazyModule(new TLBuffer()) }
-    buffers.zipWithIndex.foreach{ case (b, i) => {
+    buffers.zipWithIndex.foreach{ case (b, i) =>
       b.suggestName(s"${n}_${i}")
-    }}
+    }
     val node = buffers.map(_.node.asInstanceOf[TLNode]).reduce(_ :*=* _)
     (buffers, node)
   }
@@ -155,8 +152,7 @@ class XSTile(val parentName:String = "Unknown")(implicit p: Parameters) extends 
     case None =>
   }
 
-  misc.i_mmio_port := core.frontend.instrUncache.clientNode
-  misc.d_mmio_port := core.exuBlock.memoryBlock.uncache.clientNode
+  misc.coreUncachePort := core.uncacheBuffer.node
 
   lazy val module = new XSTileImp(this)
 }
@@ -204,8 +200,8 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
 
   outer.l2cache.foreach(_.module.io.dfx_reset := io.dfx_reset)
   io.cpu_halt := outer.core.module.io.cpu_halt
-  
-  if(outer.l2cache.isDefined){
+
+  if (outer.l2cache.isDefined) {
     require(outer.core.module.io.perfEvents.length == outer.l2cache.get.module.io_perf.length)
     outer.core.module.io.perfEvents.zip(outer.l2cache.get.module.io_perf).foreach(x => x._1.value := x._2.value)
   }
@@ -226,7 +222,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
 
 
   private val mbistBroadCastToCore = if(outer.coreParams.hasMbist) {
-    val res = Some(Wire(new BroadCastBundle))
+    val res = Some(Wire(new SramBroadcastBundle))
     outer.core.module.dft.get := res.get
     res
   } else {
@@ -234,7 +230,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
   }
   private val mbistBroadCastToL2 = if(outer.coreParams.L2CacheParamsOpt.isDefined) {
     if(outer.coreParams.L2CacheParamsOpt.get.hasMbist){
-      val res = Some(Wire(new BroadCastBundle))
+      val res = Some(Wire(new SramBroadcastBundle))
       outer.l2cache.get.module.dft.get := res.get
       res
     } else {
@@ -244,7 +240,7 @@ class XSTileImp(outer: XSTile)(implicit p: Parameters) extends LazyModuleImp(out
     None
   }
   val dft = if(mbistBroadCastToCore.isDefined || mbistBroadCastToL2.isDefined){
-    Some(IO(new BroadCastBundle))
+    Some(IO(new SramBroadcastBundle))
   } else {
     None
   }

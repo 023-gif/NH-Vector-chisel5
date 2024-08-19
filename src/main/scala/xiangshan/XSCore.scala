@@ -28,8 +28,9 @@ import freechips.rocketchip.diplomacy.{BundleBridgeSource, LazyModule, LazyModul
 import freechips.rocketchip.interrupts.{IntSinkNode, IntSinkPortSimple}
 import freechips.rocketchip.tile.HasFPUParameters
 import freechips.rocketchip.tilelink.TLBuffer
-import xs.utils.mbist.{MBISTInterface, MBISTPipeline}
-import xs.utils.sram.SRAMTemplate
+import xs.utils.mbist.{MbistInterface, MbistPipeline}
+import xs.utils.sram.{SRAMTemplate, SramHelper}
+import xs.utils.tl.TLUStoreBuffer
 import xs.utils.{DFTResetSignals, ModuleNode, RegNextN, ResetGen, ResetGenNode}
 import system.HasSoCParameter
 import utils._
@@ -43,25 +44,25 @@ import xiangshan.vector.HasVectorParameters
 abstract class XSModule(implicit val p: Parameters) extends Module
   with HasXSParameter
   with HasFPUParameters
-  with HasVectorParameters{
+  with HasVectorParameters {
 }
 
 abstract class XSBundle(implicit val p: Parameters) extends Bundle
   with HasXSParameter with HasVectorParameters
 
-abstract class XSCoreBase(val parentName:String = "Unknown")(implicit p: config.Parameters) extends LazyModule
-  with HasXSParameter
-{
+class XSCore(val parentName: String = "Core_")(implicit p: config.Parameters) extends LazyModule
+  with HasXSParameter with HasXSDts {
   // interrupt sinks
   val clint_int_sink = IntSinkNode(IntSinkPortSimple(1, 2))
   val debug_int_sink = IntSinkNode(IntSinkPortSimple(1, 1))
   val plic_int_sink = IntSinkNode(IntSinkPortSimple(2, 1))
   // outer facing nodes
-  val frontend = LazyModule(new Frontend(parentName = parentName + "frontend_"))
-  val ptw = LazyModule(new PTWWrapper(parentName = parentName + "ptw_"))
+  val frontend = LazyModule(new Frontend)
+  val ptw = LazyModule(new PTWWrapper)
   val ptw_to_l2_buffer = LazyModule(new TLBuffer)
-  val exuBlock = LazyModule(new ExecuteBlock(parentName = parentName + "execute_"))
+  val exuBlock = LazyModule(new ExecuteBlock)
   val ctrlBlock = LazyModule(new CtrlBlock)
+  val uncacheBuffer = LazyModule(new TLUStoreBuffer(coreParams.uncacheOustanding))
   exuBlock.integerReservationStation.dispatchNode :*= ctrlBlock.dispatchNode
   exuBlock.floatingReservationStation.dispatchNode :*= ctrlBlock.dispatchNode
   exuBlock.memoryReservationStation.dispatchNode :*= ctrlBlock.dispatchNode
@@ -70,15 +71,13 @@ abstract class XSCoreBase(val parentName:String = "Unknown")(implicit p: config.
   ctrlBlock.rob.writebackNode :=* exuBlock.writebackNetwork.node
   ctrlBlock.wbMergeBuffer.writebackNode :=* exuBlock.writebackNetwork.node
   ptw_to_l2_buffer.node := ptw.node
-}
+  uncacheBuffer.node :=* frontend.instrUncache.clientNode
+  uncacheBuffer.node :=* exuBlock.memoryBlock.uncache.clientNode
 
-class XSCore(parentName:String = "Core_")(implicit p: config.Parameters) extends XSCoreBase(parentName = parentName)
-  with HasXSDts
-{
   lazy val module = new XSCoreImp(this)
 }
 
-class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
+class XSCoreImp(outer: XSCore) extends LazyModuleImp(outer)
   with HasXSParameter
   with HasSoCParameter {
   val io = IO(new Bundle {
@@ -227,28 +226,25 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   io.l2_pf_enable := csrioIn.customCtrl.l2_pf_enable
   io.l2_pf_ctrl := csrioIn.customCtrl.l2_pf_ctrl
 
-  val mbistPipeline = if(coreParams.hasMbist && coreParams.hasShareBus) {
-    MBISTPipeline.PlaceMbistPipeline(Int.MaxValue, s"MBIST_Core", true)
-  } else {
-    None
-  }
-  val sigFromSrams = if(coreParams.hasMbist) Some(SRAMTemplate.genBroadCastBundleTop()) else None
+  val mbistPipeline = MbistPipeline.PlaceMbistPipeline(Int.MaxValue, s"MBIST_Core", coreParams.hasMbist)
+
+  val sigFromSrams = if(coreParams.hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
   val dft = if(coreParams.hasMbist) Some(IO(sigFromSrams.get.cloneType)) else None
   if(coreParams.hasMbist) {
     dft.get <> sigFromSrams.get
     dontTouch(dft.get)
   }
 
-  val coreMbistIntf = if (outer.coreParams.hasMbist && outer.coreParams.hasShareBus) {
+  val coreMbistIntf = if (outer.coreParams.hasMbist) {
     val params = mbistPipeline.get.nodeParams
-    val intf = Some(Module(new MBISTInterface(
+    val intf = Some(Module(new MbistInterface(
       params = Seq(params),
       ids = Seq(mbistPipeline.get.childrenIds),
       name = s"MBIST_intf_core",
       pipelineNum = 1
     )))
     intf.get.toPipeline.head <> mbistPipeline.get.mbist
-    if(coreParams.HartId == 0) mbistPipeline.get.genCSV(intf.get.info, "MBIST_Core")
+    if(coreParams.HartId == 0) mbistPipeline.get.registerCSV(intf.get.info, "MBIST_Core")
     intf.get.mbist := DontCare
     dontTouch(intf.get.mbist)
     //TODO: add mbist controller connections here

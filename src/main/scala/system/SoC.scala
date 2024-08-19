@@ -35,9 +35,8 @@ import xiangshan.backend.execute.fu.PMAConst
 import axi2tl._
 import freechips.rocketchip.util.{FastToSlow, SlowToFast}
 import xs.utils.{DFTResetSignals, ResetGen}
-import xs.utils.mbist.STD_CLKGT_func
 import xs.utils.perf.DebugOptionsKey
-import xs.utils.sram.SRAMTemplate
+import xs.utils.sram.{SRAMTemplate, SramHelper}
 
 case object SoCParamsKey extends Field[SoCParameters]
 
@@ -54,7 +53,6 @@ case class SoCParameters
   )),
   periHalfFreq:Boolean = true,
   hasMbist:Boolean = false,
-  hasShareBus:Boolean = false,
   hasRot:Boolean = true
 ){
   // L3 configurations
@@ -121,7 +119,7 @@ trait HaveSlaveAXI4Port {
 
   l3_xbar :=
     TLBuffer() :=
-    AXI2TL(16, 16, soc.hasMbist, soc.hasShareBus) :=
+    AXI2TL(16, 16, soc.hasMbist) :=
     AXI4Buffer() :=
     AXI2TLFragmenter() :=
     AXI4Buffer() :=
@@ -276,7 +274,7 @@ class SoCMiscImp(outer:SoCMisc)(implicit p: Parameters) extends LazyModuleImp(ou
   val periClock = IO(Input(Clock()))
   val ROMInitEn = IO(Output(Bool()))
 
-  val sigFromSrams = if (p(SoCParamsKey).hasMbist) Some(SRAMTemplate.genBroadCastBundleTop()) else None
+  val sigFromSrams = if (p(SoCParamsKey).hasMbist) Some(SramHelper.genBroadCastBundleTop()) else None
   val dft = if (p(SoCParamsKey).hasMbist) Some(IO(sigFromSrams.get.cloneType)) else None
   if (p(SoCParamsKey).hasMbist) {
     dft.get <> sigFromSrams.get
@@ -290,8 +288,12 @@ class SoCMiscImp(outer:SoCMisc)(implicit p: Parameters) extends LazyModuleImp(ou
   } else {
     outer.periCx.module.clock := clock
   }
-  outer.periCx.module.reset := ResetGen(3, Some(dfx))
-  outer.periCx.module.dfx_reset := dfx
+  private val periCxRstSync = Module(new ResetGen)
+  periCxRstSync.reset := ResetGen(3, Some(dfx))
+  periCxRstSync.clock := outer.periCx.module.clock
+  periCxRstSync.dft := dfx
+  outer.periCx.module.reset := periCxRstSync.o_reset
+  outer.periCx.module.scanMode := dfx.scan_mode
   outer.periCx.module.rtc_clock := rtcClock
   ROMInitEn := outer.periCx.module.ROMInitEn
 }
@@ -309,6 +311,7 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
   val plic = LazyModule(new TLPLIC(PLICParams(baseAddress = 0x3c000000L), 8))
   val clint = LazyModule(new CLINT(CLINTParams(0x38000000L), 8))
   val debugModule = LazyModule(new DebugModule(NumCores))
+  private val periCxXbar = LazyModule(new TLXbar(TLArbiter.lowestIndexFirst))
 
   val sinkNode = TLRationalCrossingSink(FastToSlow)
   val sbSourceNode = if(debugModule.debug.dmInner.dmInner.sb2tlOpt.isDefined) {
@@ -320,9 +323,10 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
   }
 
   managerBuffer.node :*= sinkNode
-  plic.node :*= managerBuffer.node
-  clint.node :*= managerBuffer.node
-  debugModule.debug.node :*= managerBuffer.node
+  periCxXbar.node :*= managerBuffer.node
+  plic.node :*= periCxXbar.node
+  clint.node :*= periCxXbar.node
+  debugModule.debug.node :*= periCxXbar.node
 
   plic.intnode := intSourceNode
 
@@ -330,17 +334,17 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
   val rot_rstmgr: Option[ROT_rstmgr] = if (includeROT) {
     // ROT
     val rstmgr = LazyModule(new ROT_rstmgr)
-    rstmgr.node :*= managerBuffer.node
-    Some(rstmgr) 
+    rstmgr.node :*= periCxXbar.node
+    Some(rstmgr)
   } else {
     None
   }
   
   val tlrot: Option[TLROT_blackbox] = if (includeROT) {
     val rot = LazyModule(new TLROT_blackbox)
-    rot.node := TLFragmenter(4, 8) := TLWidthWidget(8) :*= managerBuffer.node
-    rot.node_rom :*= managerBuffer.node
-    Some(rot) 
+    rot.node := TLFragmenter(4, 8) := TLWidthWidget(8) :*= periCxXbar.node
+    rot.node_rom :*= periCxXbar.node
+    Some(rot)
   } else {
     None
   }
@@ -350,15 +354,14 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
   class Impl extends LazyModuleImp(this) {
     val debug_module_io: DebugModuleIO = IO(new DebugModuleIO(NumCores))
     val ext_intrs: UInt = IO(Input(UInt(NrExtIntr.W)))
-    val dfx_reset = IO(Input(new DFTResetSignals()))
+    val scanMode = IO(Input(Bool()))
     val rtc_clock = IO(Input(Bool()))
     val ROMInitEn = IO(Output(Bool()))
-    private val rst_sync = ResetGen(2, Some(dfx_reset))
     debugModule.module.io <> debug_module_io
     debugModule.module.io.clock := clock.asBool
-    debugModule.module.io.reset := rst_sync
+    debugModule.module.io.reset := reset
     debugModule.module.io.debugIO.clock := clock
-    debugModule.module.io.debugIO.reset := rst_sync
+    debugModule.module.io.debugIO.reset := reset
     debugModule.module.io.resetCtrl.hartIsInReset.zip(debug_module_io.resetCtrl.hartIsInReset).foreach({case(dst, src) =>
       val coreResetDelayer = Module(new ResetGen(8))
       coreResetDelayer.dft := 0.U.asTypeOf(coreResetDelayer.dft)
@@ -366,9 +369,6 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
       coreResetDelayer.reset := src.asAsyncReset
       dst := coreResetDelayer.o_reset.asBool
     })
-    plic.module.reset := rst_sync
-    clint.module.reset := rst_sync
-    managerBuffer.module.reset := rst_sync
 
     tlrot.foreach { rot =>
       rot.module.io_rot.clock := clock
@@ -376,17 +376,17 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
 
     rot_rstmgr.foreach { rstmgr =>
       val rst_ctrl = Wire(Bool())
-      when(dfx_reset.scan_mode) {
-        rst_ctrl := rst_sync.asBool
+      when(scanMode) {
+        rst_ctrl := reset.asBool
       }.otherwise {
-        rst_ctrl := rst_sync.asBool | rstmgr.module.io.ctrl
+        rst_ctrl := reset.asBool | rstmgr.module.io.ctrl
       }
 
       tlrot.get.module.io_rot.key0 := rstmgr.module.io.key
       tlrot.get.module.io_rot.key_valid := rstmgr.module.io.key_valid
       tlrot.get.module.io_rot.reset := rst_ctrl
       ROMInitEn := tlrot.get.module.io_rot.ROMInitEn
-      tlrot.get.module.io_rot.scan_mode := dfx_reset.scan_mode
+      tlrot.get.module.io_rot.scan_mode := scanMode
     }
 
     if (tlrot.isEmpty) {
@@ -394,7 +394,7 @@ class MiscPeriComplex(includeROT: Boolean=true)(implicit p: Parameters) extends 
     }
 
     // sync external interrupts
-    withReset(rst_sync) {
+    withReset(reset) {
       if (includeROT) {
         require(intSourceNode.out.head._1.length == ext_intrs.getWidth + tlrot_intr)
       } else {

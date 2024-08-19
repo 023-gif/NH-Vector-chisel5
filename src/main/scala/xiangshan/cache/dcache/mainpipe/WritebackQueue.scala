@@ -628,7 +628,7 @@ class DataWriteReq(implicit p: Parameters) extends DataReadReq with HasDCachePar
   val data = Vec(wbqWays, UInt((CacheLineSize / wbqWays).W))
 }
 
-class WbDuplicatedDataArray(nway: Int, parentName: String = "Unkonw")(implicit p: Parameters) extends DCacheModule  with HasDCacheParameters{
+class WbDuplicatedDataArray(nway: Int)(implicit p: Parameters) extends DCacheModule  with HasDCacheParameters{
   val io = IO(new Bundle() {
     val read = Flipped(DecoupledIO(new DataReadReq))
     val resp = Output(Vec(nway, UInt((CacheLineSize / nway).W)))
@@ -639,9 +639,7 @@ class WbDuplicatedDataArray(nway: Int, parentName: String = "Unkonw")(implicit p
     set = cfg.nReleaseEntries, 
     way = nway,
     shouldReset = false, holdRead = false, singlePort = true,
-    hasMbist = coreParams.hasMbist,
-    hasShareBus = coreParams.hasShareBus,
-    parentName = parentName + s"array_"
+    hasMbist = coreParams.hasMbist
     ))
   
     

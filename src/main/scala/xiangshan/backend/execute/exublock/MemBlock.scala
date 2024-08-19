@@ -39,7 +39,7 @@ import xiangshan.cache._
 import xiangshan.cache.mmu.{BTlbPtwIO, HasTlbConst, PtwSectorResp, TLB, TlbHintIO, TlbIO, TlbReplace}
 import xiangshan.mem._
 import xiangshan.mem.prefetch._
-import xs.utils.mbist.MBISTPipeline
+import xs.utils.mbist.MbistPipeline
 import xs.utils.perf.HasPerfLogging
 import xs.utils.{DelayN, ParallelPriorityMux, RegNextN, ValidIODelay}
 
@@ -83,7 +83,7 @@ class MemIssueRouter(implicit p: Parameters) extends LazyModule{
   }
 }
 
-class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extends BasicExuBlock
+class MemBlock(implicit p: Parameters) extends BasicExuBlock
   with HasXSParameter{
 
   private val lduParams = Seq.tabulate(exuParameters.LduCnt)(idx => {
@@ -191,7 +191,7 @@ class MemBlock(val parentName:String = "Unknown")(implicit p: Parameters) extend
 //  slduIssueNodes.foreach(_ :*= issueNode) //???
   allWritebackNodes.foreach(onode => writebackNode :=* onode)
 
-  val dcache = LazyModule(new DCacheWrapper(parentName = parentName + "dcache_"))
+  val dcache = LazyModule(new DCacheWrapper)
   val uncache = LazyModule(new Uncache())
   val l2_pf_sender_opt = coreParams.prefetcher.map(_ =>
     BundleBridgeSource(() => new PrefetchRecv)
@@ -325,7 +325,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   val l1_pf_req = Wire(Decoupled(new L1PrefetchReq()))
   val prefetcherOpt: Option[BasePrefecher] = coreParams.prefetcher match {
     case Some(sms_sender: SMSParams) =>
-      val sms = Module(new SMSPrefetcher(parentName = outer.parentName + "sms_"))
+      val sms = Module(new SMSPrefetcher)
       sms.io_agt_en := RegNextN(io.csrCtrl.l1D_pf_enable_agt, 2, Some(false.B))
       sms.io_pht_en := RegNextN(io.csrCtrl.l1D_pf_enable_pht, 2, Some(false.B))
       sms.io_act_threshold := RegNextN(io.csrCtrl.l1D_pf_active_threshold, 2, Some(12.U))
@@ -945,11 +945,7 @@ class MemBlockImp(outer: MemBlock) extends BasicExuBlockImp(outer)
   io.memInfo.lqFull := RegNext(lsq.io.lqFull)
   io.memInfo.dcacheMSHRFull := RegNext(dcache.io.mshrFull)
 
-  val mbistPipeline = if(coreParams.hasMbist && coreParams.hasShareBus) {
-    MBISTPipeline.PlaceMbistPipeline(2, s"${outer.parentName}_mbistPipe", true)
-  } else {
-    None
-  }
+  val mbistPipeline = MbistPipeline.PlaceMbistPipeline(2, place = coreParams.hasMbist)
 
   io.lqFull := lsq.io.lqFull
   io.sqFull := lsq.io.sqFull
