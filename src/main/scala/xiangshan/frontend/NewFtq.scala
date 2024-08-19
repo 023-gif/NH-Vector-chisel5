@@ -562,7 +562,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   val mispredict_vec = Reg(Vec(FtqSize, Vec(PredictWidth, Bool())))
   val pred_stage = Reg(Vec(FtqSize, UInt(2.W)))
 
-  val c_invalid :: c_valid :: c_commited :: Nil = Enum(3)
+  val c_invalid :: c_valid :: c_commited :: c_flushed :: Nil = Enum(4)
   val commitStateQueue = RegInit(VecInit(Seq.fill(FtqSize) {
     VecInit(Seq.fill(PredictWidth)(c_invalid))
   }))
@@ -995,8 +995,11 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
     ifuPtrPlus2_write := idx + 3.U
     when (notIfu) {
       commitStateQueue(idx.value).zipWithIndex.foreach({ case (s, i) =>
-        when(i.U > offset || i.U === offset && flushItSelf){
+        when(i.U > offset){
           s := c_invalid
+        }
+        when(i.U === offset && flushItSelf){
+          s := c_flushed
         }
       })
     }
@@ -1039,13 +1042,31 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   //   Cat(commitStateQueue(commPtr.value).map(s => {
   //     s === c_invalid || s === c_commited
   //   })).andR
-  val noToCommit = commitStateQueue(commPtr.value).map(s => s =/= c_valid).reduce(_ && _)
-  val allEmpty = commitStateQueue(commPtr.value).map(s => s === c_invalid).reduce(_ && _)
-  canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && (isAfter(robCommPtr, commPtr) || noToCommit && !allEmpty)
+  // val noToCommit = commitStateQueue(commPtr.value).map(s => s =/= c_valid).reduce(_ && _)
+  // val allEmpty = commitStateQueue(commPtr.value).map(s => s === c_invalid).reduce(_ && _)
+  // canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && (isAfter(robCommPtr, commPtr) || noToCommit && !allEmpty)
 
+  val validInstructions = commitStateQueue(commPtr.value).map(s => s === c_valid || s === c_commited)
+  val lastInstructionStatus = PriorityMux(validInstructions.reverse.zip(commitStateQueue(commPtr.value).reverse))
+  val firstInstructionFlushed = commitStateQueue(commPtr.value)(0) === c_flushed
+  canCommit := commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
+    (isAfter(robCommPtr, commPtr) ||
+      validInstructions.reduce(_ || _) && lastInstructionStatus === c_commited)
+  val canMoveCommPtr = commPtr =/= ifuWbPtr && !may_have_stall_from_bpu &&
+    (isAfter(robCommPtr, commPtr) ||
+      validInstructions.reduce(_ || _) && lastInstructionStatus === c_commited ||
+      firstInstructionFlushed)
+
+  // when (io.fromBackend.rob_commits.map(_.valid).reduce(_ | _)) {
+  //   robCommPtr_write := ParallelPriorityMux(io.fromBackend.rob_commits.map(_.valid).reverse, io.fromBackend.rob_commits.map(_.bits.ftqIdx).reverse)
+  // } .elsewhen (commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && noToCommit && !allEmpty) {
+  //   robCommPtr_write := commPtr
+  // } .otherwise {
+  //   robCommPtr_write := robCommPtr
+  // }
   when (io.fromBackend.rob_commits.map(_.valid).reduce(_ | _)) {
     robCommPtr_write := ParallelPriorityMux(io.fromBackend.rob_commits.map(_.valid).reverse, io.fromBackend.rob_commits.map(_.bits.ftqIdx).reverse)
-  } .elsewhen (commPtr =/= ifuWbPtr && !may_have_stall_from_bpu && noToCommit && !allEmpty) {
+  } .elsewhen (isAfter(commPtr, robCommPtr)) {
     robCommPtr_write := commPtr
   } .otherwise {
     robCommPtr_write := robCommPtr
@@ -1076,7 +1097,7 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
   // need one cycle to read mem and srams
   val do_commit_ptr = RegNext(commPtr)
   val do_commit = RegNext(canCommit, init=false.B)
-  when (canCommit) {
+  when (canMoveCommPtr) {
     commPtr_write := commPtrPlus1
     commPtrPlus1_write := commPtrPlus1 + 1.U
   }
