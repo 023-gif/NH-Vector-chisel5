@@ -55,7 +55,7 @@ case class XSCoreParameters
   VAddrBits: Int = 39,
   HasFPU: Boolean = true,
   HasCustomCSRCacheOp: Boolean = true,
-  FetchWidth: Int = 8,
+  FetchWidth: Int = 6,
   AsidLength: Int = 16,
   EnableBPU: Boolean = true,
   EnableBPD: Boolean = true,
@@ -114,6 +114,9 @@ case class XSCoreParameters
       val preds = Seq(ubtb, tage, ftb, ittage, ras)
       preds.map(_.io := DontCare)
 
+
+      ftb.io.fauftb_entry_in  := ubtb.io.fauftb_entry_out
+      ftb.io.fauftb_entry_hit_in := ubtb.io.fauftb_entry_hit_out
       // ubtb.io.resp_in(0)  := resp_in
       // bim.io.resp_in(0)   := ubtb.io.resp
       // btb.io.resp_in(0)   := bim.io.resp
@@ -128,6 +131,7 @@ case class XSCoreParameters
       (preds, ras.io.out)
     }),
   IBufSize: Int = 48,
+  IBufNBank: Int = 4,
   DecodeWidth: Int = 4,
   RenameWidth: Int = 4,
   CommitWidth: Int = 6,
@@ -339,6 +343,7 @@ trait HasXSParameter {
   val CacheLineHalfWord = CacheLineSize / 16
   val ExtHistoryLength = HistoryLength + 64
   val IBufSize = coreParams.IBufSize
+  val IBufNBank = coreParams.IBufNBank
   val DecodeWidth = coreParams.DecodeWidth
   val RenameWidth = coreParams.RenameWidth
   val CommitWidth = coreParams.CommitWidth

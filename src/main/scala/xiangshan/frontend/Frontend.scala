@@ -72,7 +72,7 @@ class FrontendImp (outer: Frontend) extends LazyModuleImp(outer)
   val icache       = outer.icache.module
   val bpu     = Module(new Predictor)
   val ifu     = Module(new NewIFU)
-  val ibuffer =  Module(new Ibuffer)
+  val ibuffer =  Module(new IBuffer)
   val ftq = Module(new Ftq)
 
   val tlbCsr = DelayN(io.tlbCsr, 2)
