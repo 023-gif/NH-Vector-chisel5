@@ -372,7 +372,7 @@ trait HasSC extends HasSCParameter with HasPerfEvents { this: Tage =>
       scTables(i).io.update.takens    := RegEnable(scUpdateTakens, false.B, updateValids)
       scTables(i).io.update.oldCtrs   := RegEnable(scUpdateOldCtrs(i), 0.S, updateValids)
       scTables(i).io.update.pc := RegEnable(update.pc, 0.U, updateValids)
-      scTables(i).io.update.ghist := RegEnable(io.update(i).bits.ghist, updateValids)
+      scTables(i).io.update.ghist := RegEnable(io.update.bits.ghist, updateValids)
     }
     
 

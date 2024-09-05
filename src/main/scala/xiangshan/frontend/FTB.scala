@@ -182,6 +182,11 @@ class FTBEntryWithTag(implicit p: Parameters) extends XSBundle with FTBParams wi
   val tag = UInt(tagSize.W)
 }
 
+// class uPipeEntry(implicit p: Parameters) extends XSBundle with FTBParams with BPUUtils {
+//   val valid = Bool()
+//   val tag = UInt(tagSize.W)
+// }
+
 class FTBMeta(implicit p: Parameters) extends XSBundle with FTBParams {
   val writeWay = UInt(log2Ceil(numWays).W)
   val hit = Bool()
@@ -433,7 +438,7 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
   //Clear counter during false_hit or ifuRedirect
   val ftb_false_hit = WireInit(false.B)
   val needReopen = s0_close_ftb_req && (ftb_false_hit || io.redirectFromIFU)
-  ftb_false_hit := io.update(dupForFtb).valid && io.update(dupForFtb).bits.falseHit
+  ftb_false_hit := io.update.valid && io.update.bits.falseHit
   when(needReopen){
     fauftb_ftb_entry_consistent_counter := 0.U
     s0_close_ftb_req := false.B
@@ -523,7 +528,9 @@ with HasCircularQueuePtrHelper with HasPerfEvents {
 
 
   // Update logic
-  val u = io.update(dupForFtb)
+  val u = 0.U.asTypeOf(Valid(new BranchPredictionUpdate))
+  u.valid := io.update.valid
+  u.bits := io.update.bits
   val update = u.bits
 
   val u_meta = update.meta.asTypeOf(new FTBMeta)

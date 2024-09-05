@@ -138,7 +138,8 @@ class FtqMetaEntry(implicit p: Parameters) extends XSBundle with HasBPUConst {
 
 class FtqToBpuIO(implicit p: Parameters) extends XSBundle {
   val redirect = Valid(new BranchPredictionRedirect)
-  val update = Valid(new BranchPredictionUpdate)
+  //val update = Valid(new BranchPredictionUpdate)
+  val update = DecoupledIO(new BranchPredictionUpdate)
   val enq_ptr = Output(new FtqPtr)
   val redirctFromIFU = Output(Bool())
 }
@@ -1028,12 +1029,13 @@ class Ftq(parentName:String = "Unknown")(implicit p: Parameters) extends XSModul
    * Redirect to BPU.
    * Commit update to BPU.
    */
+  val bpu_update_ready = io.toBpu.update.ready
   io.toBpu.redirctFromIFU := ifuRedirectToBpu.valid
   io.toBpu.redirect := Mux(fromBackendRedirect.valid, fromBackendRedirect, ifuRedirectToBpu)
 
   val mayHaveStallFromBpu = Wire(Bool())
   val BpuFtbUpdateStall = RegInit(0.U(2.W)) // 2-cycle stall, so we need 3 states
-  mayHaveStallFromBpu := BpuFtbUpdateStall =/= 0.U
+  mayHaveStallFromBpu := BpuFtbUpdateStall =/= 0.U || !bpu_update_ready
 
   canCommit := commPtr =/= ifuWbPtr && !mayHaveStallFromBpu &&
     Cat(commitStateQueue(commPtr.value).map(s => {

@@ -145,7 +145,7 @@ class FauFTB(implicit p: Parameters) extends BasePredictor with FauFTBParams {
    * */
 
   // s0
-  private val us = io.update(dupForUbtb)
+  private val us = io.update
   private val u_meta = us.bits.meta.asTypeOf(new FauFTBMeta)
   private val u_s0_tag = getTag(us.bits.pc)
 

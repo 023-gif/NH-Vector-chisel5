@@ -135,7 +135,8 @@ class BasePredictorIO (implicit p: Parameters) extends XSBundle with HasBPUConst
   val s2_ready = Output(Bool())
   val s3_ready = Output(Bool())
 
-  val update = Vec(numDup, Flipped(Valid(new BranchPredictionUpdate)))
+  //val update = Vec(numDup, Flipped(Valid(new BranchPredictionUpdate)))
+  val update = Flipped(DecoupledIO(new BranchPredictionUpdate))
   val redirect = Flipped(Valid(new BranchPredictionRedirect))
   val redirectFromIFU = Input(Bool())
 }
@@ -159,6 +160,8 @@ abstract class BasePredictor(implicit p: Parameters) extends XSModule
   io.s1_ready := true.B
   io.s2_ready := true.B
   io.s3_ready := true.B
+
+  io.update.ready := true.B
 
   val s0_pc_dup   = WireInit(io.in.bits.s0_pc) // fetchIdx(io.f0_pc)
   val s1_pc_dup   = s0_pc_dup.indices.map(i => Reg(UInt(VAddrBits.W)))
@@ -378,6 +381,7 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
     s3_fire_dup(2) && s3_redirect_dup(2)
   io.bpu_to_ftq.resp.bits  := predictors.io.out
   io.bpu_to_ftq.resp.bits.lastStageSpecInfo.histPtr     := s3_ghist_ptr_dup(2)
+  io.ftq_to_bpu.update.ready := predictors.io.update.ready
 
   npcGen_dup.zip(s0_pc_reg_dup).foreach{ case (gen, reg) =>
     gen.register(true.B, reg, Some("stallPC"), 0)}
@@ -618,9 +622,11 @@ class Predictor(parentName:String = "Unknown")(implicit p: Parameters) extends X
   io.bpu_to_ftq.resp.bits.s3.hasRedirect.zip(s3_redirect_dup).foreach {case (hr, r) => hr := r}
   io.bpu_to_ftq.resp.bits.s3.ftqIdx := s3_ftq_idx
 
-  predictors.io.update := RegNext(dup(io.ftq_to_bpu.update))
-  predictors.io.update.foreach(_.bits.ghist := RegNext(getHist(io.ftq_to_bpu.update.bits.specInfo.histPtr)))
-  
+  predictors.io.update.valid := RegNext(io.ftq_to_bpu.update.valid)
+  predictors.io.update.bits := RegNext(io.ftq_to_bpu.update.bits)
+  //predictors.io.update.foreach(_.bits.ghist := RegNext(getHist(io.ftq_to_bpu.update.bits.specInfo.histPtr)))
+  predictors.io.update.bits.ghist := RegNext(getHist(io.ftq_to_bpu.update.bits.specInfo.histPtr))
+
   val redirect_dup = do_redirect_dup.map(_.bits)
   predictors.io.redirect := do_redirect_dup(0)
 
