@@ -182,11 +182,6 @@ class FTBEntryWithTag(implicit p: Parameters) extends XSBundle with FTBParams wi
   val tag = UInt(tagSize.W)
 }
 
-// class uPipeEntry(implicit p: Parameters) extends XSBundle with FTBParams with BPUUtils {
-//   val valid = Bool()
-//   val tag = UInt(tagSize.W)
-// }
-
 class FTBMeta(implicit p: Parameters) extends XSBundle with FTBParams {
   val writeWay = UInt(log2Ceil(numWays).W)
   val hit = Bool()

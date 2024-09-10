@@ -84,9 +84,9 @@ class Composer(parentName:String = "Unknown")(implicit p: Parameters) extends Ba
   for (c <- components.reverse) {
     // c.io.update := io.update
     // for (i <- 0 until numDup) {
-    c.io.update.bits.meta := update_meta_dup
     c.io.update.valid := io.update.valid
     c.io.update.bits := io.update.bits
+    c.io.update.bits.meta := update_meta_dup
     update_meta_dup = update_meta_dup >> c.meta_size
     // }
   }
